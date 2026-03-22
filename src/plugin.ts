@@ -71,8 +71,7 @@ export function viteLiveDevMcp(options: ViteLiveDevMcpOptions = {}): Plugin {
 
       // Init session + writers once server is listening (so resolvedUrls is available)
       server.httpServer?.once('listening', () => {
-        // Prefer PORTLESS_URL (set by portless CLI) for stable named URLs
-        const serverUrl = process.env.PORTLESS_URL?.replace(/\/$/, '') ??
+        const serverUrl =
           server.resolvedUrls?.local?.[0]?.replace(/\/$/, '') ??
           `http://localhost:${config.server.port ?? 5173}`
 
