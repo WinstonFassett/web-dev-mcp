@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, basename } from 'node:path'
 import type { ViteLiveDevMcpOptions } from './types.js'
 
 interface McpConfig {
@@ -11,6 +11,11 @@ const CONFIG_FILES: Record<string, string> = {
   claude: '.mcp.json',
   cursor: '.cursor/mcp.json',
   windsurf: '.windsurf/mcp.json',
+}
+
+function deriveServerName(projectRoot: string): string {
+  const name = basename(projectRoot)
+  return `${name}-vite-mcp`
 }
 
 export function autoRegister(
@@ -46,7 +51,7 @@ export function autoRegister(
       config.mcpServers = {}
     }
 
-    config.mcpServers['vite-live-dev-mcp'] = { url: mcpUrl }
+    config.mcpServers[deriveServerName(projectRoot)] = { url: mcpUrl }
 
     mkdirSync(dir, { recursive: true })
     writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n')

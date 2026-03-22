@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "vite-live-dev-mcp": {
-      "url": "http://vite-live-dev-mcp.localhost:1355/__mcp/sse"
+    "test-app-vite-mcp": {
+      "url": "http://test-app.localhost:1355/__mcp/sse"
     }
   }
 }
