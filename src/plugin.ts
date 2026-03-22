@@ -12,6 +12,7 @@ import { NetworkWriter } from './writers/network.js'
 import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './mcp-server.js'
 import { autoRegister } from './auto-register.js'
 import { setupRpcWebSocket } from './rpc-server.js'
+import { createCdpMiddleware, setupCdpWebSocket } from './cdp-server.js'
 
 const VIRTUAL_MODULE_ID = 'virtual:vite-harness-client'
 const RESOLVED_VIRTUAL_MODULE_ID = '\0' + VIRTUAL_MODULE_ID
@@ -77,13 +78,21 @@ export function viteLiveDevMcp(options: ViteLiveDevMcpOptions = {}): Plugin {
     },
 
     configureServer(server: ViteDevServer) {
+      // Shared context for serverUrl (set when listening)
+      const cdpCtx = { serverUrl: '' }
+
       // Register MCP middleware BEFORE Vite's internal middlewares
       const mcpMiddleware = createMcpMiddleware(mcpPath, mcpCtx)
       server.middlewares.use(mcpMiddleware as any)
 
+      // Register CDP middleware early (needs serverUrl from context)
+      server.middlewares.use(createCdpMiddleware(cdpCtx) as any)
+
       // Setup capnweb RPC WebSocket on /__rpc
       if (server.httpServer) {
         setupRpcWebSocket(server.httpServer, '/__rpc')
+        // Setup CDP WebSocket (also needs serverUrl but only for /json output)
+        setupCdpWebSocket(server.httpServer, cdpCtx)
       }
 
       // Init session + writers once server is listening (so resolvedUrls is available)
@@ -91,6 +100,9 @@ export function viteLiveDevMcp(options: ViteLiveDevMcpOptions = {}): Plugin {
         const serverUrl =
           server.resolvedUrls?.local?.[0]?.replace(/\/$/, '') ??
           `http://localhost:${config.server.port ?? 5173}`
+
+        // Set serverUrl in CDP context
+        cdpCtx.serverUrl = serverUrl
 
         session = initSession(config.root, options, config.env?.VITE_VERSION ?? 'unknown', serverUrl, mcpPath)
 
@@ -144,6 +156,7 @@ export function viteLiveDevMcp(options: ViteLiveDevMcpOptions = {}): Plugin {
 
         if (options.printUrl !== false) {
           config.logger.info(`  ➜  vite-live-dev-mcp: ${session.info.mcpUrl}`)
+          config.logger.info(`  ➜  CDP endpoint: ${serverUrl}/__cdp`)
           config.logger.info(`  ➜  log dir: ${session.logDir}`)
         }
       })

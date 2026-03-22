@@ -4,6 +4,19 @@
 // NOTE: This is a virtual module — must be valid JavaScript (no TS syntax).
 
 import { RpcTarget, newWebSocketRpcSession } from 'capnweb'
+import chobitsu from 'chobitsu'
+
+// Generate or retrieve sticky browser ID
+const BROWSER_ID_KEY = '__vite_live_dev_mcp_browser_id__'
+function getBrowserId() {
+  let id = sessionStorage.getItem(BROWSER_ID_KEY)
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Date.now().toString(36)
+    sessionStorage.setItem(BROWSER_ID_KEY, id)
+  }
+  return id
+}
+const browserId = getBrowserId()
 
 // Proxy-based wrapper that exposes any object over RPC
 // Automatically wraps DOM nodes, arrays, and handles method binding
@@ -119,6 +132,41 @@ class AnyTarget extends RpcTarget {
 }
 
 class BrowserApi extends RpcTarget {
+  // Browser ID for CDP targeting
+  get id() { return browserId }
+
+  // Page info for CDP /json endpoint
+  getPageInfo() {
+    return {
+      id: browserId,
+      title: document.title,
+      url: window.location.href,
+      type: 'page',
+    }
+  }
+
+  // CDP via Chobitsu — connect callback for responses, returns disconnect function
+  #cdpCallback = null
+
+  cdpConnect(callback) {
+    this.#cdpCallback = callback
+    chobitsu.setOnMessage(message => {
+      if (this.#cdpCallback) {
+        this.#cdpCallback.send(message)
+      }
+    })
+    return true
+  }
+
+  cdpSend(message) {
+    chobitsu.sendRawMessage(message)
+  }
+
+  cdpDisconnect() {
+    this.#cdpCallback = null
+    chobitsu.setOnMessage(() => {})
+  }
+
   // Expose document and window directly via AnyTarget proxy
   get document() { return new AnyTarget(document) }
   get window() { return new AnyTarget(window) }

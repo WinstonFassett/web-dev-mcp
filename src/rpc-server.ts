@@ -1,7 +1,5 @@
-import { RpcSession, type RpcTransport, type RpcStub } from 'capnweb'
+import { RpcSession, RpcTarget, type RpcTransport, type RpcStub } from 'capnweb'
 import { WebSocketServer, type WebSocket as WsWebSocket } from 'ws'
-import type { Server as HttpServer, IncomingMessage } from 'node:http'
-import type { Duplex } from 'node:stream'
 
 // Adapt ws WebSocket to capnweb's RpcTransport
 function createWsTransport(ws: WsWebSocket): RpcTransport {
@@ -62,28 +60,92 @@ function createWsTransport(ws: WsWebSocket): RpcTransport {
 }
 
 export interface BrowserStub {
+  // Browser identity
+  id: string
+  getPageInfo(): Promise<{ id: string; title: string; url: string; type: string }>
+
+  // CDP via Chobitsu
+  cdpConnect(callback: RpcTarget): Promise<boolean>
+  cdpSend(message: string): Promise<void>
+  cdpDisconnect(): Promise<void>
+
+  // Legacy methods
   eval(expression: string): Promise<string>
-  querySelector(selector: string): Promise<any>
   queryDom(selector: string, options: {
     max_depth?: number
     attributes?: string[]
     text_length?: number
   }): Promise<{ html: string; element_count: number; truncated: boolean }>
-  getTitle(): Promise<string>
-  getUrl(): Promise<string>
 }
 
-// Active browser connections
-const browserStubs = new Map<string, RpcStub<BrowserStub>>()
+interface BrowserConnection {
+  stub: RpcStub<BrowserStub>
+  browserId: string | null  // Sticky ID from browser, null until first RPC
+  connectedAt: number
+}
+
+// Active browser connections — keyed by internal connection ID
+const browsers = new Map<string, BrowserConnection>()
+
+// Order of connection for first/latest
+const connectionOrder: string[] = []
 
 export function getBrowserStub(): RpcStub<BrowserStub> | undefined {
-  // Return the first connected browser (usually there's only one)
-  const first = browserStubs.values().next()
-  return first.done ? undefined : first.value
+  // Return the latest connected browser
+  return getBrowserByAlias('latest')
+}
+
+export function getBrowserByAlias(alias: 'first' | 'latest'): RpcStub<BrowserStub> | undefined {
+  if (connectionOrder.length === 0) return undefined
+  const connId = alias === 'first' ? connectionOrder[0] : connectionOrder[connectionOrder.length - 1]
+  return browsers.get(connId)?.stub
+}
+
+export function getBrowserById(browserId: string): RpcStub<BrowserStub> | undefined {
+  for (const conn of browsers.values()) {
+    if (conn.browserId === browserId) return conn.stub
+  }
+  return undefined
+}
+
+export function getAllBrowsers(): Array<{ connId: string; browserId: string | null; connectedAt: number }> {
+  return Array.from(browsers.entries()).map(([connId, conn]) => ({
+    connId,
+    browserId: conn.browserId,
+    connectedAt: conn.connectedAt,
+  }))
 }
 
 export function getBrowserStubCount(): number {
-  return browserStubs.size
+  return browsers.size
+}
+
+// Wait for a browser to connect (with timeout)
+export async function waitForBrowser(timeoutMs = 5000): Promise<RpcStub<BrowserStub>> {
+  const existing = getBrowserStub()
+  if (existing) return existing
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup()
+      reject(new Error('Timeout waiting for browser connection'))
+    }, timeoutMs)
+
+    const check = () => {
+      const stub = getBrowserStub()
+      if (stub) {
+        cleanup()
+        resolve(stub)
+      }
+    }
+
+    const interval = setInterval(check, 100)
+
+    const cleanup = () => {
+      clearTimeout(timeout)
+      clearInterval(interval)
+    }
+  })
 }
 
 export function setupRpcWebSocket(httpServer: { on(event: string, listener: (...args: any[]) => void): void }, rpcPath: string) {
@@ -99,17 +161,34 @@ export function setupRpcWebSocket(httpServer: { on(event: string, listener: (...
     // Don't handle other upgrades — let Vite's HMR WebSocket handle them
   })
 
-  wss.on('connection', (ws) => {
-    const id = Math.random().toString(36).slice(2)
+  wss.on('connection', async (ws) => {
+    const connId = Math.random().toString(36).slice(2)
     const transport = createWsTransport(ws)
 
-    // Create RPC session — browser is the remote main, we're the local (no local main for now)
+    // Create RPC session — browser is the remote main
     const session = new RpcSession<BrowserStub>(transport)
     const stub = session.getRemoteMain()
-    browserStubs.set(id, stub)
+
+    const conn: BrowserConnection = {
+      stub,
+      browserId: null,
+      connectedAt: Date.now(),
+    }
+
+    browsers.set(connId, conn)
+    connectionOrder.push(connId)
+
+    // Fetch browser's sticky ID asynchronously
+    try {
+      conn.browserId = await stub.id
+    } catch {
+      // Browser may not support id property yet
+    }
 
     ws.on('close', () => {
-      browserStubs.delete(id)
+      browsers.delete(connId)
+      const idx = connectionOrder.indexOf(connId)
+      if (idx >= 0) connectionOrder.splice(idx, 1)
     })
   })
 
