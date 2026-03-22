@@ -8,7 +8,7 @@ interface McpConfig {
 }
 
 const CONFIG_FILES: Record<string, string> = {
-  claude: '.claude/mcp.json',
+  claude: '.mcp.json',
   cursor: '.cursor/mcp.json',
   windsurf: '.windsurf/mcp.json',
 }

@@ -5,6 +5,9 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "vite-live-dev-mcp": "dist/cli.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
