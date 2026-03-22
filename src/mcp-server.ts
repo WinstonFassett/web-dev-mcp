@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { z } from 'zod'
 import type { SessionState } from './session.js'
 import { truncateChannelFiles } from './session.js'
+import { queryLogs } from './log-reader.js'
 import type { HmrWriter } from './writers/hmr.js'
 import type { ViteLiveDevMcpOptions } from './types.js'
 
@@ -18,6 +19,31 @@ export interface McpContext {
   options: ViteLiveDevMcpOptions
   connectedClients: number
   hot?: HotChannel
+}
+
+function relayToBrowser(
+  ctx: McpContext,
+  sendEvent: string,
+  responseEvent: string,
+  payload: Record<string, unknown>,
+  timeoutMs = 5000,
+): Promise<any> {
+  if (!ctx.hot) {
+    return Promise.resolve({ error: 'No hot channel available. Is the dev server running?' })
+  }
+  const requestId = Math.random().toString(36).slice(2)
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      resolve({ error: 'Timeout waiting for browser response. Is the browser open?', requestId })
+    }, timeoutMs)
+    ctx.hot!.on(responseEvent, (data: any) => {
+      if (data.requestId === requestId) {
+        clearTimeout(timeout)
+        resolve(data)
+      }
+    })
+    ctx.hot!.send(sendEvent, { ...payload, requestId })
+  })
 }
 
 function createMcpServerInstance(ctx: McpContext): McpServer {
@@ -105,6 +131,93 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
     },
   )
 
+  // eval_in_browser
+  mcp.tool(
+    'eval_in_browser',
+    'Run JavaScript in the browser and return the result. Use for DOM queries, checking state, or any browser-side computation.',
+    {
+      expression: z.string().describe('JavaScript expression to evaluate. Return value is serialized as JSON.'),
+      timeout: z.number().optional().describe('Timeout in ms (default: 5000)'),
+    },
+    async (args) => {
+      const result = await relayToBrowser(
+        ctx,
+        'harness:eval',
+        'harness:eval-response',
+        { expression: args.expression },
+        args.timeout ?? 5000,
+      )
+      if (result.error) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: result.error, stack: result.stack, duration_ms: result.duration_ms }, null, 2) }],
+          isError: true,
+        }
+      }
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ result: result.result, duration_ms: result.duration_ms }, null, 2) }],
+      }
+    },
+  )
+
+  // get_logs
+  mcp.tool(
+    'get_logs',
+    'Query log files with filtering and pagination. Returns structured events from console, hmr, errors, or network channels.',
+    {
+      channel: z.string().describe('Channel to query: console, hmr, errors, network'),
+      since_id: z.number().optional().describe('Return events after this ID (line number). For pagination.'),
+      limit: z.number().optional().describe('Max events to return (default: 50, max: 200)'),
+      level: z.string().optional().describe('Filter by level (e.g. "error", "warn") or type (e.g. "unhandled-exception")'),
+      search: z.string().optional().describe('Text search across event payload (case-insensitive)'),
+    },
+    async (args) => {
+      const result = queryLogs(ctx.session.files, {
+        channel: args.channel,
+        sinceId: args.since_id,
+        limit: args.limit,
+        level: args.level,
+        search: args.search,
+      })
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      }
+    },
+  )
+
+  // query_dom
+  mcp.tool(
+    'query_dom',
+    'Query DOM elements and return cleaned HTML with only the tags and attributes you need. Agent controls depth, attributes, and text truncation.',
+    {
+      selector: z.string().describe('CSS selector to query (e.g. "#app", ".header", "form"). Omit or use "body" for whole page.'),
+      max_depth: z.number().optional().describe('Max nesting depth to serialize (default: 3)'),
+      attributes: z.array(z.string()).optional().describe('Attributes to include (default: id, class, href, src, value, type, placeholder, role, aria-label)'),
+      text_length: z.number().optional().describe('Max chars of text content per element (default: 100)'),
+    },
+    async (args) => {
+      const result = await relayToBrowser(
+        ctx,
+        'harness:query-dom',
+        'harness:query-dom-response',
+        {
+          selector: args.selector,
+          max_depth: args.max_depth,
+          attributes: args.attributes,
+          text_length: args.text_length,
+        },
+      )
+      if (result.error) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: result.error }, null, 2) }],
+          isError: true,
+        }
+      }
+      return {
+        content: [{ type: 'text' as const, text: result.html }],
+      }
+    },
+  )
+
   if (ctx.options.react) {
     mcp.tool(
       'get_react_tree',
@@ -116,42 +229,17 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
         include_state: z.boolean().optional().describe('Include component state (default: false)'),
       },
       async (args) => {
-        if (!ctx.hot) {
-          return {
-            content: [{ type: 'text' as const, text: 'No hot channel available. Is the dev server running?' }],
-            isError: true,
-          }
-        }
-
-        const requestId = Math.random().toString(36).slice(2)
-
-        // Send request to browser and wait for response
-        const result = await new Promise<unknown>((resolve) => {
-          const timeout = setTimeout(() => {
-            resolve({
-              snapshot_at: Date.now(),
-              file: ctx.session.files.react ?? '',
-              total_components: 0,
-              tree: [],
-              error: 'Timeout waiting for browser response. Is the browser open?',
-            })
-          }, 5000)
-
-          ctx.hot!.on('harness:react-tree-response', (data: any) => {
-            if (data.requestId === requestId) {
-              clearTimeout(timeout)
-              resolve(data)
-            }
-          })
-
-          ctx.hot!.send('harness:get-react-tree', {
+        const result = await relayToBrowser(
+          ctx,
+          'harness:get-react-tree',
+          'harness:react-tree-response',
+          {
             depth: args.depth,
             filter_name: args.filter_name,
             include_props: args.include_props,
             include_state: args.include_state,
-            requestId,
-          })
-        })
+          },
+        )
 
         // Write to react.ndjson
         if (ctx.session.files.react) {
