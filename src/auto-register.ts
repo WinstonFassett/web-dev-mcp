@@ -24,7 +24,7 @@ export function autoRegister(
   options: ViteLiveDevMcpOptions,
 ): string[] {
   const autoReg = options.autoRegister
-  if (autoReg === false) return []
+  if (!autoReg) return []
 
   const registered: string[] = []
 

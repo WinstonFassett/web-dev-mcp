@@ -115,8 +115,8 @@ export function viteLiveDevMcp(options: ViteLiveDevMcpOptions = {}): Plugin {
           })
         }
 
-        // Auto-register agent configs
-        if (options.autoRegister !== false) {
+        // Auto-register agent configs (off by default)
+        if (options.autoRegister === true || (typeof options.autoRegister === 'object')) {
           const registered = autoRegister(config.root, session.info.mcpUrl, options)
           if (options.printUrl !== false) {
             for (const path of registered) {
