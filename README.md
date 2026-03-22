@@ -6,17 +6,7 @@ Vite plugin that gives AI coding agents live observability and browser control d
 graph LR
     Agent[AI Agent] <-->|MCP| Vite[Vite Dev Server]
     Vite <-->|RPC| Browser[Browser]
-
-    subgraph capabilities[" "]
-        direction TB
-        C1[console/errors]
-        C2[DOM access]
-        C3[eval JS]
-        C4[localStorage]
-        C5[network logs]
-    end
-
-    Browser --- capabilities
+    Browser -.- Features[console · errors · DOM<br/>eval · localStorage · network]
 ```
 
 ## Quick Start
