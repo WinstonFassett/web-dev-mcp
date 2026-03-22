@@ -1,0 +1,6 @@
+node_modules/
+dist/
+test-app/.claude/
+test-app/.cursor/
+test-app/.windsurf/
+test-app/src/*.js
