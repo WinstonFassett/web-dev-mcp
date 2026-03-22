@@ -1,6 +1,8 @@
 // React fiber tree adapter using bippy
 // Loaded only when react: true is set in plugin options
 // Must be imported BEFORE React to hook into the fiber tree
+//
+// NOTE: This file is served as a virtual module — must be valid JavaScript.
 
 import {
   instrument,
@@ -9,35 +11,18 @@ import {
   isCompositeFiber,
   traverseProps,
   traverseState,
-  type Fiber,
 } from 'bippy'
 
-interface ComponentNode {
-  name: string
-  depth: number
-  props?: Record<string, string>
-  state?: Record<string, string>
-  children: ComponentNode[]
-}
-
-interface TreeRequest {
-  depth?: number
-  filter_name?: string
-  include_props?: boolean
-  include_state?: boolean
-  requestId: string
-}
-
-let fiberRoot: Fiber | null = null
+let fiberRoot = null
 
 // Install the fiber hook — this MUST run before React initializes
 instrument({
-  onCommitFiberRoot(_rendererID: number, root: Fiber) {
+  onCommitFiberRoot(_rendererID, root) {
     fiberRoot = root
   },
 })
 
-function truncateValue(val: unknown, maxLen = 200): string {
+function truncateValue(val, maxLen = 200) {
   try {
     const s = typeof val === 'string' ? val : JSON.stringify(val)
     return s && s.length > maxLen ? s.slice(0, maxLen) + '…' : (s ?? 'undefined')
@@ -46,15 +31,12 @@ function truncateValue(val: unknown, maxLen = 200): string {
   }
 }
 
-function buildTree(
-  fiber: Fiber,
-  opts: { depth: number; maxDepth: number; filterName?: string; includeProps: boolean; includeState: boolean },
-): ComponentNode[] {
+function buildTree(fiber, opts) {
   if (opts.depth > opts.maxDepth) return []
 
-  const nodes: ComponentNode[] = []
+  const nodes = []
 
-  traverseFiber(fiber, (f: Fiber) => {
+  traverseFiber(fiber, (f) => {
     if (!isCompositeFiber(f)) return
 
     const name = getDisplayName(f) ?? 'Anonymous'
@@ -64,15 +46,15 @@ function buildTree(
       return
     }
 
-    const node: ComponentNode = {
+    const node = {
       name,
       depth: opts.depth,
       children: [],
     }
 
     if (opts.includeProps) {
-      const props: Record<string, string> = {}
-      traverseProps(f, (propName: string, nextValue: unknown) => {
+      const props = {}
+      traverseProps(f, (propName, nextValue) => {
         if (propName !== 'children') {
           props[propName] = truncateValue(nextValue)
         }
@@ -83,9 +65,9 @@ function buildTree(
     }
 
     if (opts.includeState) {
-      const state: Record<string, string> = {}
+      const state = {}
       let stateIdx = 0
-      traverseState(f, (nextValue: unknown) => {
+      traverseState(f, (nextValue) => {
         state[`state_${stateIdx++}`] = truncateValue(nextValue)
       })
       if (Object.keys(state).length > 0) {
@@ -99,11 +81,7 @@ function buildTree(
   return nodes
 }
 
-export function getReactTree(request: TreeRequest): {
-  snapshot_at: number
-  total_components: number
-  tree: ComponentNode[]
-} {
+function getReactTree(request) {
   const maxDepth = Math.min(request.depth ?? 8, 20)
 
   if (!fiberRoot) {
@@ -131,9 +109,9 @@ export function getReactTree(request: TreeRequest): {
 
 // Listen for tree requests from the server via HMR
 if (import.meta.hot) {
-  import.meta.hot.on('harness:get-react-tree', (request: TreeRequest) => {
+  import.meta.hot.on('harness:get-react-tree', (request) => {
     const result = getReactTree(request)
-    import.meta.hot!.send('harness:react-tree-response', {
+    import.meta.hot.send('harness:react-tree-response', {
       ...result,
       requestId: request.requestId,
     })

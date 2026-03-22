@@ -1,6 +1,9 @@
 // Browser shim — injected as virtual module at dev time
 // Patches console.*, window error handlers, and optionally fetch/XHR
 // All events relayed to server via import.meta.hot.send()
+//
+// NOTE: This file is served as a virtual module. Vite does NOT run TypeScript
+// transforms on virtual modules, so this must be valid JavaScript (no TS syntax).
 
 if (import.meta.hot) {
   // --- Console patching ---
@@ -12,10 +15,10 @@ if (import.meta.hot) {
     debug: console.debug.bind(console),
   }
 
-  const LEVELS = ['log', 'warn', 'error', 'info', 'debug'] as const
+  const LEVELS = ['log', 'warn', 'error', 'info', 'debug']
 
   for (const level of LEVELS) {
-    ;(console as any)[level] = (...args: unknown[]) => {
+    console[level] = (...args) => {
       // Call original first
       originalConsole[level](...args)
 
@@ -29,18 +32,18 @@ if (import.meta.hot) {
         }
       })
 
-      const payload: Record<string, unknown> = { level, args: serializedArgs }
+      const payload = { level, args: serializedArgs }
 
       // For errors, capture stack
       if (level === 'error' && args[0] instanceof Error) {
-        payload.stack = (args[0] as Error).stack
+        payload.stack = args[0].stack
       }
 
-      import.meta.hot!.send('harness:console', payload)
+      import.meta.hot.send('harness:console', payload)
 
       // Also send to errors channel for console.error
       if (level === 'error') {
-        import.meta.hot!.send('harness:error', {
+        import.meta.hot.send('harness:error', {
           type: 'console-error',
           message: serializedArgs.join(' '),
           stack: payload.stack,
@@ -51,7 +54,7 @@ if (import.meta.hot) {
 
   // --- Unhandled exception handler ---
   window.addEventListener('error', (event) => {
-    import.meta.hot!.send('harness:error', {
+    import.meta.hot.send('harness:error', {
       type: 'unhandled-exception',
       message: event.message,
       stack: event.error?.stack,
@@ -63,7 +66,7 @@ if (import.meta.hot) {
   // --- Unhandled rejection handler ---
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event.reason
-    import.meta.hot!.send('harness:error', {
+    import.meta.hot.send('harness:error', {
       type: 'unhandled-rejection',
       message: reason instanceof Error ? reason.message : String(reason),
       stack: reason instanceof Error ? reason.stack : undefined,
@@ -71,25 +74,25 @@ if (import.meta.hot) {
   })
 
   // --- React adapter (opt-in, controlled by __HARNESS_REACT__ flag) ---
-  if ((globalThis as any).__HARNESS_REACT__) {
+  if (globalThis.__HARNESS_REACT__) {
     import('virtual:vite-harness-react-adapter')
   }
 
   // --- Network patching (opt-in, controlled by __HARNESS_NETWORK__ flag) ---
-  if ((globalThis as any).__HARNESS_NETWORK__) {
-    const EXCLUDE_PATTERNS = (globalThis as any).__HARNESS_NETWORK_EXCLUDE__ || [
+  if (globalThis.__HARNESS_NETWORK__) {
+    const EXCLUDE_PATTERNS = globalThis.__HARNESS_NETWORK_EXCLUDE__ || [
       '/__',
       '/@',
       '/node_modules',
     ]
 
-    function shouldExclude(url: string): boolean {
-      return EXCLUDE_PATTERNS.some((p: string) => url.includes(p))
+    function shouldExclude(url) {
+      return EXCLUDE_PATTERNS.some((p) => url.includes(p))
     }
 
     // Patch fetch
     const originalFetch = window.fetch.bind(window)
-    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    window.fetch = async (input, init) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       if (shouldExclude(url)) return originalFetch(input, init)
 
@@ -97,7 +100,7 @@ if (import.meta.hot) {
       const response = await originalFetch(input, init)
       const duration = Math.round(performance.now() - start)
 
-      import.meta.hot!.send('harness:network', {
+      import.meta.hot.send('harness:network', {
         method: (init?.method ?? 'GET').toUpperCase(),
         url,
         status: response.status,
@@ -111,19 +114,19 @@ if (import.meta.hot) {
     // Patch XMLHttpRequest
     const XHROpen = XMLHttpRequest.prototype.open
     const XHRSend = XMLHttpRequest.prototype.send
-    XMLHttpRequest.prototype.open = function (method: string, url: string | URL, ...rest: any[]) {
-      ;(this as any).__harness_method = method
-      ;(this as any).__harness_url = typeof url === 'string' ? url : url.href
+    XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+      this.__harness_method = method
+      this.__harness_url = typeof url === 'string' ? url : url.href
       return XHROpen.call(this, method, url, ...rest)
     }
-    XMLHttpRequest.prototype.send = function (body?: Document | XMLHttpRequestBodyInit | null) {
-      const url = (this as any).__harness_url as string
+    XMLHttpRequest.prototype.send = function (body) {
+      const url = this.__harness_url
       if (shouldExclude(url)) return XHRSend.call(this, body)
 
       const start = performance.now()
       this.addEventListener('loadend', () => {
-        import.meta.hot!.send('harness:network', {
-          method: ((this as any).__harness_method ?? 'GET').toUpperCase(),
+        import.meta.hot.send('harness:network', {
+          method: (this.__harness_method ?? 'GET').toUpperCase(),
           url,
           status: this.status,
           duration: Math.round(performance.now() - start),
