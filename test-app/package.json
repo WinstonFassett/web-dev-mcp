@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite"
+    "dev": "portless vite-live-dev-mcp vite"
   },
   "dependencies": {
     "react": "^19.0.0",
