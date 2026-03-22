@@ -5,75 +5,137 @@
 
 import { RpcTarget, newWebSocketRpcSession } from 'capnweb'
 
-class DomElement extends RpcTarget {
-  #el
+// Proxy-based wrapper that exposes any object over RPC
+// Automatically wraps DOM nodes, arrays, and handles method binding
+class AnyTarget extends RpcTarget {
+  #target
+  #wrapCache = new WeakMap()
 
-  constructor(el) {
+  constructor(target) {
     super()
-    this.#el = el
+    this.#target = target
+    return new Proxy(this, {
+      get: (_, prop) => {
+        // Prevent promise detection (thenable check)
+        if (prop === 'then') return undefined
+        // Expose RpcTarget internals
+        if (prop === '__rpcTarget') return true
+
+        const val = this.#target[prop]
+
+        // Bind and wrap methods
+        if (typeof val === 'function') {
+          return (...args) => {
+            const result = val.apply(this.#target, args)
+            return this.#wrap(result)
+          }
+        }
+
+        return this.#wrap(val)
+      },
+      set: (_, prop, value) => {
+        this.#target[prop] = value
+        // Dispatch events for form elements
+        if ((prop === 'value' || prop === 'checked') && this.#target.dispatchEvent) {
+          this.#target.dispatchEvent(new Event('input', { bubbles: true }))
+          this.#target.dispatchEvent(new Event('change', { bubbles: true }))
+        }
+        return true
+      }
+    })
   }
 
-  get textContent() { return this.#el.textContent }
-  get innerHTML() { return this.#el.innerHTML }
-  get outerHTML() { return this.#el.outerHTML }
-  get tagName() { return this.#el.tagName }
-  get id() { return this.#el.id }
-  get className() { return this.#el.className }
+  #wrap(val) {
+    if (val === null || val === undefined) return val
+    if (typeof val !== 'object' && typeof val !== 'function') return val
 
-  getAttribute(name) { return this.#el.getAttribute(name) }
-  getBoundingClientRect() {
-    const r = this.#el.getBoundingClientRect()
-    return { top: r.top, left: r.left, width: r.width, height: r.height, bottom: r.bottom, right: r.right }
-  }
+    // Already wrapped
+    if (val.__rpcTarget) return val
 
-  click() { this.#el.click() }
-  focus() { this.#el.focus() }
-  blur() { this.#el.blur() }
+    // Use cache to avoid creating multiple wrappers for same object
+    if (this.#wrapCache.has(val)) return this.#wrapCache.get(val)
 
-  setValue(value) {
-    this.#el.value = value
-    this.#el.dispatchEvent(new Event('input', { bubbles: true }))
-    this.#el.dispatchEvent(new Event('change', { bubbles: true }))
-  }
+    // Wrap DOM nodes
+    if (val instanceof Node) {
+      const wrapped = new AnyTarget(val)
+      this.#wrapCache.set(val, wrapped)
+      return wrapped
+    }
 
-  querySelector(selector) {
-    const el = this.#el.querySelector(selector)
-    return el ? new DomElement(el) : null
-  }
+    // Wrap NodeList, HTMLCollection, and arrays containing nodes
+    if (val instanceof NodeList || val instanceof HTMLCollection) {
+      return Array.from(val).map(n => this.#wrap(n))
+    }
 
-  querySelectorAll(selector) {
-    const els = this.#el.querySelectorAll(selector)
-    return Array.from(els).map(el => new DomElement(el))
-  }
+    // Wrap Storage objects
+    if (val instanceof Storage) {
+      const wrapped = new AnyTarget(val)
+      this.#wrapCache.set(val, wrapped)
+      return wrapped
+    }
 
-  get childElementCount() { return this.#el.childElementCount }
+    // Wrap Location
+    if (val instanceof Location) {
+      // Return plain object to avoid security issues with Location proxy
+      return {
+        href: val.href,
+        protocol: val.protocol,
+        host: val.host,
+        hostname: val.hostname,
+        port: val.port,
+        pathname: val.pathname,
+        search: val.search,
+        hash: val.hash,
+        origin: val.origin
+      }
+    }
 
-  getChildren() {
-    return Array.from(this.#el.children).map(el => new DomElement(el))
+    // Plain objects and arrays — return as-is (serialized over wire)
+    if (Array.isArray(val) || val.constructor === Object) {
+      return val
+    }
+
+    // DOMRect, etc — convert to plain object
+    if (val instanceof DOMRect || val instanceof DOMRectReadOnly) {
+      return { top: val.top, left: val.left, width: val.width, height: val.height, bottom: val.bottom, right: val.right }
+    }
+
+    // CSSStyleDeclaration — wrap it
+    if (val instanceof CSSStyleDeclaration) {
+      const wrapped = new AnyTarget(val)
+      this.#wrapCache.set(val, wrapped)
+      return wrapped
+    }
+
+    // Fallback: try to wrap, may fail for some exotic objects
+    try {
+      const wrapped = new AnyTarget(val)
+      this.#wrapCache.set(val, wrapped)
+      return wrapped
+    } catch {
+      return String(val)
+    }
   }
 }
 
 class BrowserApi extends RpcTarget {
+  // Expose document and window directly via AnyTarget proxy
+  get document() { return new AnyTarget(document) }
+  get window() { return new AnyTarget(window) }
+  get localStorage() { return new AnyTarget(localStorage) }
+  get sessionStorage() { return new AnyTarget(sessionStorage) }
+
+  // Keep eval for backward compat — serializes result to string
   eval(expression) {
     const fn = new Function('return (' + expression + ')')
     const raw = fn()
-    // Serialize result
     if (raw && typeof raw === 'object' && typeof raw.then === 'function') {
       return raw.then(v => typeof v === 'string' ? v : JSON.stringify(v))
     }
     return typeof raw === 'string' ? raw : JSON.stringify(raw)
   }
 
-  querySelector(selector) {
-    const el = document.querySelector(selector)
-    return el ? new DomElement(el) : null
-  }
-
-  querySelectorAll(selector) {
-    const els = document.querySelectorAll(selector)
-    return Array.from(els).map(el => new DomElement(el))
-  }
-
+  // Keep queryDom for backward compat — returns serialized HTML snapshot
   queryDom(selector, options = {}) {
     const {
       max_depth = 3,
@@ -135,9 +197,6 @@ class BrowserApi extends RpcTarget {
 
     return { html, element_count: elementCount, truncated }
   }
-
-  getTitle() { return document.title }
-  getUrl() { return window.location.href }
 }
 
 // Connect to the RPC WebSocket
