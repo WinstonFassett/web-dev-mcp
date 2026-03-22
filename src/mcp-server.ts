@@ -7,6 +7,7 @@ import { truncateChannelFiles } from './session.js'
 import { queryLogs } from './log-reader.js'
 import type { HmrWriter } from './writers/hmr.js'
 import type { ViteLiveDevMcpOptions } from './types.js'
+import { getBrowserStub } from './rpc-server.js'
 
 export interface HotChannel {
   send(event: string, data: unknown): void
@@ -140,6 +141,24 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
       timeout: z.number().optional().describe('Timeout in ms (default: 5000)'),
     },
     async (args) => {
+      // Try capnweb RPC first
+      const stub = getBrowserStub()
+      if (stub) {
+        try {
+          const start = Date.now()
+          const result = await stub.eval(args.expression)
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ result, duration_ms: Date.now() - start }, null, 2) }],
+          }
+        } catch (err: any) {
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ error: err.message ?? String(err) }, null, 2) }],
+            isError: true,
+          }
+        }
+      }
+
+      // Fall back to HMR relay
       const result = await relayToBrowser(
         ctx,
         'harness:eval',
@@ -195,6 +214,27 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
       text_length: z.number().optional().describe('Max chars of text content per element (default: 100)'),
     },
     async (args) => {
+      // Try capnweb RPC first
+      const stub = getBrowserStub()
+      if (stub) {
+        try {
+          const result = await stub.queryDom(args.selector ?? 'body', {
+            max_depth: args.max_depth,
+            attributes: args.attributes,
+            text_length: args.text_length,
+          })
+          return {
+            content: [{ type: 'text' as const, text: (result as any).html ?? JSON.stringify(result, null, 2) }],
+          }
+        } catch (err: any) {
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ error: err.message ?? String(err) }, null, 2) }],
+            isError: true,
+          }
+        }
+      }
+
+      // Fall back to HMR relay
       const result = await relayToBrowser(
         ctx,
         'harness:query-dom',

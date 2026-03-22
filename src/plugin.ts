@@ -11,14 +11,18 @@ import { ErrorsWriter } from './writers/errors.js'
 import { NetworkWriter } from './writers/network.js'
 import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './mcp-server.js'
 import { autoRegister } from './auto-register.js'
+import { setupRpcWebSocket } from './rpc-server.js'
 
 const VIRTUAL_MODULE_ID = 'virtual:vite-harness-client'
 const RESOLVED_VIRTUAL_MODULE_ID = '\0' + VIRTUAL_MODULE_ID
 const REACT_ADAPTER_MODULE_ID = 'virtual:vite-harness-react-adapter'
 const RESOLVED_REACT_ADAPTER_MODULE_ID = '\0' + REACT_ADAPTER_MODULE_ID
+const RPC_BROWSER_MODULE_ID = 'virtual:vite-harness-rpc-browser'
+const RESOLVED_RPC_BROWSER_MODULE_ID = '\0' + RPC_BROWSER_MODULE_ID
 
 let _clientShimSource: string | undefined
 let _reactAdapterSource: string | undefined
+let _rpcBrowserSource: string | undefined
 const _packageDir = dirname(fileURLToPath(import.meta.url))
 
 function getClientShimSource(): string {
@@ -35,6 +39,14 @@ function getReactAdapterSource(): string {
     _reactAdapterSource = readFileSync(adapterPath, 'utf-8')
   }
   return _reactAdapterSource
+}
+
+function getRpcBrowserSource(): string {
+  if (!_rpcBrowserSource) {
+    const rpcPath = join(_packageDir, '..', 'src', 'client', 'rpc-browser.ts')
+    _rpcBrowserSource = readFileSync(rpcPath, 'utf-8')
+  }
+  return _rpcBrowserSource
 }
 
 export function viteLiveDevMcp(options: ViteLiveDevMcpOptions = {}): Plugin {
@@ -68,6 +80,11 @@ export function viteLiveDevMcp(options: ViteLiveDevMcpOptions = {}): Plugin {
       // Register MCP middleware BEFORE Vite's internal middlewares
       const mcpMiddleware = createMcpMiddleware(mcpPath, mcpCtx)
       server.middlewares.use(mcpMiddleware as any)
+
+      // Setup capnweb RPC WebSocket on /__rpc
+      if (server.httpServer) {
+        setupRpcWebSocket(server.httpServer, '/__rpc')
+      }
 
       // Init session + writers once server is listening (so resolvedUrls is available)
       server.httpServer?.once('listening', () => {
@@ -178,6 +195,9 @@ export function viteLiveDevMcp(options: ViteLiveDevMcpOptions = {}): Plugin {
       if (id === REACT_ADAPTER_MODULE_ID) {
         return RESOLVED_REACT_ADAPTER_MODULE_ID
       }
+      if (id === RPC_BROWSER_MODULE_ID) {
+        return RESOLVED_RPC_BROWSER_MODULE_ID
+      }
     },
 
     load(id) {
@@ -196,6 +216,9 @@ export function viteLiveDevMcp(options: ViteLiveDevMcpOptions = {}): Plugin {
       }
       if (id === RESOLVED_REACT_ADAPTER_MODULE_ID) {
         return getReactAdapterSource()
+      }
+      if (id === RESOLVED_RPC_BROWSER_MODULE_ID) {
+        return getRpcBrowserSource()
       }
     },
 

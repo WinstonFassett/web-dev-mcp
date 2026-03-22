@@ -229,6 +229,9 @@ if (import.meta.hot) {
     }
   })
 
+  // --- capnweb RPC bridge (always loaded — gives server proxy access to browser DOM) ---
+  import('virtual:vite-harness-rpc-browser')
+
   // --- React adapter (opt-in, controlled by __HARNESS_REACT__ flag) ---
   if (globalThis.__HARNESS_REACT__) {
     import('virtual:vite-harness-react-adapter')

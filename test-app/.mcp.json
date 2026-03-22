@@ -1,6 +1,7 @@
 {
   "mcpServers": {
     "test-app-vite-mcp": {
+      "type": "sse",
       "url": "http://test-app.localhost:1355/__mcp/sse"
     }
   }
