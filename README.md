@@ -2,6 +2,23 @@
 
 Vite plugin that gives AI coding agents live observability and browser control during development — console logs, HMR events, network requests, DOM queries, and JS evaluation — via NDJSON log files, an embedded MCP server, and bidirectional RPC.
 
+```mermaid
+graph LR
+    Agent[AI Agent] <-->|MCP| Vite[Vite Dev Server]
+    Vite <-->|RPC| Browser[Browser]
+
+    subgraph capabilities[" "]
+        direction TB
+        C1[console/errors]
+        C2[DOM access]
+        C3[eval JS]
+        C4[localStorage]
+        C5[network logs]
+    end
+
+    Browser --- capabilities
+```
+
 ## Quick Start
 
 ```bash
@@ -73,16 +90,19 @@ Add the MCP server to your `.mcp.json`:
 
 ## How It Works
 
-```
-Browser                              Vite Dev Server                AI Agent
-  │                                       │                            │
-  │── console/errors/network ──hot──▶     │ writes NDJSON files        │
-  │                                       │                            │
-  │◀── eval request ──────capnweb──      │ ◀── MCP tool call ─────── │
-  │── eval result ─────────capnweb──▶     │ ── MCP response ────────▶ │
-  │                                       │                            │
-  │◀── query_dom request ──capnweb──     │                            │
-  │── cleaned HTML ────────capnweb──▶     │                            │
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Vite as Vite Dev Server
+    participant Agent as AI Agent
+
+    Browser->>Vite: console/errors/network (HMR WebSocket)
+    Vite->>Vite: write NDJSON logs
+
+    Agent->>Vite: MCP tool call
+    Vite->>Browser: capnweb RPC request
+    Browser->>Vite: result
+    Vite->>Agent: MCP response
 ```
 
 Two communication channels:
