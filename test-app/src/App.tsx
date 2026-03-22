@@ -4,7 +4,7 @@ function Counter() {
   const [count, setCount] = useState(0)
   return (
     <button onClick={() => { setCount(c => c + 1); console.log(`counter: ${count + 1}`) }}>
-      Count: {count}
+      Count: {count}!
     </button>
   )
 }
@@ -27,6 +27,17 @@ export default function App() {
       <button onClick={() => fetch('/test-fetch-endpoint')}>
         Fetch
       </button>
+      <button onClick={() => doSomething()}>
+        Do Something
+      </button>
     </div>
   )
+}
+
+
+let x = 1;
+
+function doSomething () {
+  x++;
+  console.log('x is now', x);
 }
