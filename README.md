@@ -89,7 +89,7 @@ Two communication channels:
 
 1. **HMR WebSocket** (`import.meta.hot`) — browser pushes events (console, errors, network) to server, which writes them to NDJSON files. Also used as fallback for eval/query.
 
-2. **capnweb RPC WebSocket** (`/__rpc`) — bidirectional typed RPC. Server holds proxy stubs to browser objects. Used by `eval_in_browser` and `query_dom` for ~3ms round-trips. DomElement stubs support `.click()`, `.textContent`, `.querySelector()` etc.
+2. **capnweb RPC WebSocket** (`/__rpc`) — bidirectional object-capability RPC. Server holds proxy stubs to browser objects (`document`, `window`, `localStorage`, `sessionStorage`). Full DOM/Storage/Window API available via dynamic proxy — any property or method call is transparently forwarded. ~3ms per round-trip.
 
 ## Agent Workflow
 

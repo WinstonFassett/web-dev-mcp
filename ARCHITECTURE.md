@@ -9,8 +9,8 @@ graph TB
         EH[Error Handlers<br/>error, unhandledrejection]
         NP[Network Patch<br/>fetch/XHR, opt-in]
         HMR_H[HMR Relay Handlers<br/>eval, query-dom, react-tree<br/>fallback path]
-        RPC_B[capnweb BrowserApi<br/>eval · querySelector · queryDom<br/>getTitle · getUrl]
-        DOM_E[DomElement stubs<br/>textContent · click · focus<br/>setValue · getAttribute]
+        RPC_B[capnweb BrowserApi<br/>document · window · localStorage<br/>sessionStorage · eval · queryDom]
+        ANY_T[AnyTarget proxy<br/>full DOM/Storage/Window API<br/>dynamic method forwarding]
         RA[React Adapter<br/>bippy instrument, opt-in]
     end
 
@@ -41,7 +41,7 @@ graph TB
     SESS --> FILES
 
     RPC_B <-->|"capnweb WebSocket (/__rpc)"| RPC_S
-    DOM_E -.->|proxy stubs| RPC_B
+    ANY_T -.->|proxy stubs| RPC_B
     HMR_H <-->|"HMR WebSocket (import.meta.hot)"| PLG
 
     TOOLS <-->|"SSE + POST (/__mcp/sse)"| MCP
@@ -74,7 +74,7 @@ Vite's built-in WebSocket. Browser pushes events via `import.meta.hot.send('harn
 
 ### 2. capnweb RPC WebSocket (/__rpc)
 
-[capnweb](https://github.com/cloudflare/capnweb) object-capability RPC. Browser exposes `BrowserApi extends RpcTarget`, server gets a proxy stub. Method calls are transparently proxied. `DomElement` stubs support `.click()`, `.textContent`, `.querySelector()` etc. ~3ms per call.
+[capnweb](https://github.com/cloudflare/capnweb) object-capability RPC. Browser exposes `BrowserApi extends RpcTarget` with `document`, `window`, `localStorage`, `sessionStorage` getters. Each returns an `AnyTarget` proxy that dynamically forwards any property access or method call to the real browser object. Full DOM/Storage/Window API available without explicit declarations. ~3ms per call.
 
 ### 3. MCP over SSE (/__mcp/sse)
 
@@ -165,6 +165,6 @@ src/
   client/
     harness-client.ts   ← browser shim: console patch, error handlers, fetch/XHR,
                            HMR relay handlers (eval, query-dom), loads RPC + react
-    rpc-browser.ts      ← capnweb BrowserApi + DomElement RpcTargets
+    rpc-browser.ts      ← capnweb BrowserApi + AnyTarget dynamic proxy
     react-adapter.ts    ← bippy fiber hook + tree traversal (opt-in)
 ```
