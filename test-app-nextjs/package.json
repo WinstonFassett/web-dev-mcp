@@ -1,0 +1,23 @@
+{
+  "name": "test-app-nextjs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js --webpack",
+    "build": "next build",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "next": "^16.2.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "next-live-dev-mcp": "file:../packages/next-live-dev-mcp"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5"
+  }
+}

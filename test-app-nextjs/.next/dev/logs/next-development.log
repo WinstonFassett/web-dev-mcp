@@ -1,0 +1,12 @@
+{"timestamp":"00:15:40.993","source":"Browser","level":"LOG","message":"Button clicked! {\"count\":1,\"timestamp\":\"2026-03-23T23:47:33.366Z\"}"}
+{"timestamp":"00:15:40.993","source":"Browser","level":"WARN","message":"This is a warning message"}
+{"timestamp":"00:15:40.993","source":"Browser","level":"ERROR","message":"This is an error message"}
+{"timestamp":"00:15:40.993","source":"Browser","level":"INFO","message":"Count is now: 1"}
+{"timestamp":"00:15:40.996","source":"Browser","level":"WARN","message":"This is a warning message"}
+{"timestamp":"00:15:40.997","source":"Browser","level":"ERROR","message":"This is an error message \"\\n    at handleClick (app/page.tsx:13:13)\\n  11 |     console.log('Button clicked!', { count: newCount, timestamp: new Date().toISOString() })\\n  12 |     console.warn('This is a warning message')\\n> 13 |     console.error('This is an error message')\\n     |             ^\\n  14 |     console.info('Count is now:', newCount)\\n  15 |   }\\n  16 |\" \"(app/page.tsx:13:13)\""}
+{"timestamp":"00:15:43.839","source":"Browser","level":"WARN","message":"This is a warning message"}
+{"timestamp":"00:15:43.839","source":"Browser","level":"ERROR","message":"This is an error message \"\\n    at handleClick (app/page.tsx:13:13)\\n  11 |     console.log('Button clicked!', { count: newCount, timestamp: new Date().toISOString() })\\n  12 |     console.warn('This is a warning message')\\n> 13 |     console.error('This is an error message')\\n     |             ^\\n  14 |     console.info('Count is now:', newCount)\\n  15 |   }\\n  16 |\" \"(app/page.tsx:13:13)\""}
+{"timestamp":"00:15:43.840","source":"Browser","level":"LOG","message":"Button clicked! {\"count\":2,\"timestamp\":\"2026-03-23T23:47:36.236Z\"}"}
+{"timestamp":"00:15:43.840","source":"Browser","level":"WARN","message":"This is a warning message"}
+{"timestamp":"00:15:43.840","source":"Browser","level":"ERROR","message":"This is an error message"}
+{"timestamp":"00:15:43.840","source":"Browser","level":"INFO","message":"Count is now: 2"}
