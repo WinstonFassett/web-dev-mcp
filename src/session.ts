@@ -21,6 +21,7 @@ export interface SessionState {
   files: Record<string, string>
   channels: string[]
   startedAt: number
+  checkpointTs: number | null
 }
 
 export function initSession(
@@ -65,7 +66,7 @@ export function initSession(
 
   writeFileSync(join(logDir, 'session.json'), JSON.stringify(info, null, 2) + '\n')
 
-  return { info, logDir, files, channels, startedAt: info.startedAt }
+  return { info, logDir, files, channels, startedAt: info.startedAt, checkpointTs: null }
 }
 
 export function truncateChannelFiles(files: Record<string, string>, channels?: string[]): Record<string, number> {

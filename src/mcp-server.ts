@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { z } from 'zod'
 import type { SessionState } from './session.js'
 import { truncateChannelFiles } from './session.js'
-import { queryLogs } from './log-reader.js'
+import { queryLogs, getDiagnostics } from './log-reader.js'
 import type { HmrWriter } from './writers/hmr.js'
 import type { ViteLiveDevMcpOptions } from './types.js'
 import { getBrowserStub } from './rpc-server.js'
@@ -112,13 +112,17 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
 
       const countsBefore = truncateChannelFiles(ctx.session.files, channelsToClear)
 
+      // Set checkpoint timestamp
+      ctx.session.checkpointTs = Date.now()
+
       return {
         content: [
           {
             type: 'text' as const,
             text: JSON.stringify(
               {
-                cleared_at: Date.now(),
+                cleared_at: ctx.session.checkpointTs,
+                checkpoint_ts: ctx.session.checkpointTs,
                 cleared_at_id: 1,
                 files: ctx.session.files,
                 counts_cleared: countsBefore,
@@ -128,6 +132,104 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
             ),
           },
         ],
+      }
+    },
+  )
+
+  // get_diagnostics
+  mcp.tool(
+    'get_diagnostics',
+    'Consolidated diagnostic snapshot: logs + HMR + summary. Single call replaces multiple get_logs calls.',
+    {
+      since_checkpoint: z.boolean().optional().describe('Use checkpoint from last clear_logs'),
+      since_ts: z.number().optional().describe('Unix ms timestamp'),
+      limit: z.number().optional().describe('Max events per channel (default: 50, max: 200)'),
+      level: z.string().optional().describe('Filter by level (e.g. "error", "warn")'),
+      search: z.string().optional().describe('Text search across event payload (case-insensitive)'),
+    },
+    async (args) => {
+      const result = getDiagnostics(
+        ctx.session.files,
+        ctx.hmrWriter,
+        ctx.session,
+        {
+          since_checkpoint: args.since_checkpoint,
+          since_ts: args.since_ts,
+          limit: args.limit,
+          level: args.level,
+          search: args.search,
+        }
+      )
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      }
+    },
+  )
+
+  // wait_for_condition
+  mcp.tool(
+    'wait_for_condition',
+    'Poll browser condition until true or timeout. Use for async assertions.',
+    {
+      check: z.string().describe('JS expression (must return truthy)'),
+      timeout: z.number().optional().describe('Timeout ms (default: 5000)'),
+      interval: z.number().optional().describe('Poll interval ms (default: 100)'),
+    },
+    async (args) => {
+      const timeout = args.timeout ?? 5000
+      const interval = args.interval ?? 100
+      const startTs = Date.now()
+
+      while (true) {
+        const elapsed = Date.now() - startTs
+
+        if (elapsed >= timeout) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                matched: false,
+                duration_ms: elapsed,
+                error: 'Timeout waiting for condition'
+              }, null, 2)
+            }]
+          }
+        }
+
+        const stub = getBrowserStub()
+        if (!stub) {
+          await new Promise(r => setTimeout(r, interval))
+          continue
+        }
+
+        try {
+          const result = await stub.eval(args.check)
+          if (result) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                  matched: true,
+                  duration_ms: Date.now() - startTs
+                }, null, 2)
+              }]
+            }
+          }
+        } catch (err: any) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                matched: false,
+                duration_ms: Date.now() - startTs,
+                error: err.message ?? String(err)
+              }, null, 2)
+            }],
+            isError: true
+          }
+        }
+
+        await new Promise(r => setTimeout(r, interval))
       }
     },
   )

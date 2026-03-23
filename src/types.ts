@@ -89,3 +89,30 @@ export interface ComponentNode {
   state?: Record<string, string>
   children: ComponentNode[]
 }
+
+export interface HmrStatus {
+  last_update_at: number | null
+  last_error_at: number | null
+  last_error: string | undefined
+  update_count: number
+  error_count: number
+  pending: boolean
+}
+
+export interface DiagnosticSummary {
+  error_count: number
+  warning_count: number
+  failed_requests: number
+  has_unhandled_rejections: boolean
+}
+
+export interface DiagnosticsResult {
+  hmr: HmrStatus
+  logs: {
+    console: HarnessEvent[]
+    errors: HarnessEvent[]
+    network: HarnessEvent[]
+  }
+  summary: DiagnosticSummary
+  checkpoint_ts: number | null
+}
