@@ -1,0 +1,43 @@
+{
+  "name": "next-live-dev-mcp",
+  "version": "0.1.0",
+  "description": "AI agent observability for Next.js apps via MCP tools",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./client": {
+      "import": "./dist/client/index.js",
+      "types": "./dist/client/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "keywords": ["nextjs", "mcp", "observability", "development"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.0",
+    "capnweb": "^0.6.1",
+    "ws": "^8.20.0"
+  },
+  "peerDependencies": {
+    "next": ">=13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.8.0"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": false
+    }
+  }
+}
