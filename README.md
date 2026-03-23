@@ -43,6 +43,7 @@ On startup:
 
 ```
   ➜  vite-live-dev-mcp: http://localhost:5173/__mcp/sse
+  ➜  CDP endpoint: http://localhost:5173/__cdp
   ➜  log dir: /tmp/vite-harness-a3f9b2
 ```
 
@@ -66,9 +67,10 @@ Add the MCP server to your `.mcp.json`:
 | Tool | Purpose |
 |---|---|
 | `get_session_info` | Returns log dir, file paths, server URL. Call first to orient. |
+| `get_diagnostics` | **Consolidated diagnostics** — console + errors + network logs + HMR status + auto-computed summary in a single call. Replaces 4-5 separate `get_logs()` calls. **2-3x faster** for agent test/fix loops. Supports `since_checkpoint` filtering. |
 | `get_hmr_status` | HMR update/error counts, pending state. Lightweight poll. |
 | `get_logs` | Query log files with cursor pagination, level filtering, text search. |
-| `clear_logs` | Truncate log files. Call before a fix iteration for a clean slate. |
+| `clear_logs` | Truncate log files. Call before a fix iteration for a clean slate. Now sets a checkpoint timestamp for `get_diagnostics(since_checkpoint=true)`. |
 | `get_react_tree` | React component tree snapshot (requires `react: true` + `bippy`). |
 
 ### Browser Control
@@ -77,6 +79,7 @@ Add the MCP server to your `.mcp.json`:
 |---|---|
 | `eval_in_browser` | Run arbitrary JavaScript in the browser, return the result. |
 | `query_dom` | Query DOM by CSS selector, return cleaned HTML with agent-controlled depth, attributes, and text truncation. |
+| `wait_for_condition` | **Server-side polling** — blocks until browser condition (JS expression) is truthy or timeout. Eliminates manual polling loops. Default: 5s timeout, 100ms interval. |
 
 ## How It Works
 
@@ -95,33 +98,172 @@ sequenceDiagram
     Vite->>Agent: MCP response
 ```
 
-Two communication channels:
+Three communication channels:
 
 1. **HMR WebSocket** (`import.meta.hot`) — browser pushes events (console, errors, network) to server, which writes them to NDJSON files. Also used as fallback for eval/query.
 
 2. **capnweb RPC WebSocket** (`/__rpc`) — bidirectional object-capability RPC. Server holds proxy stubs to browser objects (`document`, `window`, `localStorage`, `sessionStorage`). Full DOM/Storage/Window API available via dynamic proxy — any property or method call is transparently forwarded. ~3ms per round-trip.
 
+3. **CDP WebSocket** (`/__cdp/devtools/...`) — Chrome DevTools Protocol endpoint for Playwright `connectOverCDP`. Proxies CDP commands through capnweb RPC to Chobitsu (in-browser CDP implementation).
+
+## Playwright Integration
+
+Connect Playwright to your running dev server without launching a separate browser:
+
+```javascript
+import { chromium } from 'playwright'
+
+// Connect to the live browser
+const browser = await chromium.connectOverCDP('http://localhost:5173/__cdp')
+const page = browser.contexts()[0].pages()[0]
+
+// Interact with the dev page
+await page.click('button')
+console.log(await page.title())
+```
+
+CDP endpoints:
+- `/__cdp/json/version` — browser version info
+- `/__cdp/json` — list of connected pages
+- `/__cdp/devtools/browser` — WebSocket for latest browser
+- `/__cdp/devtools/page/:id` — WebSocket for specific browser by ID
+
 ## Agent Workflow
+
+### Fast Path (Recommended)
 
 ```
 # 1. Orient
 get_session_info → note file paths, server URL
 
 # 2. Before a task
-clear_logs → clean slate
+clear_logs → clean slate (sets checkpoint)
 
 # 3. Make code changes (HMR fires automatically)
 
-# 4. Check results
-get_hmr_status → any errors?
-get_logs({ channel: "errors", limit: 10 })
-get_logs({ channel: "console", search: "counter", since_id: 5 })
+# 4. Check results with single call
+get_diagnostics({ since_checkpoint: true })
+→ Returns: console logs, errors, network, HMR status, summary stats
+→ Summary: error_count, warning_count, failed_requests, has_unhandled_rejections
+→ 2-3x faster than separate get_logs() calls
 
-# 5. Inspect the DOM
+# 5. Wait for async conditions
+wait_for_condition({ check: "document.querySelector('.loaded')" })
+
+# 6. Inspect the DOM
 query_dom({ selector: "#root", max_depth: 2 })
 eval_in_browser({ expression: "document.title" })
 
-# 6. If broken: read errors, fix, repeat
+# 7. If broken: read errors, fix, repeat from step 2
+```
+
+### Granular Path (for targeted queries)
+
+```
+# Use individual tools when you need specific filtering:
+get_hmr_status → any errors?
+get_logs({ channel: "errors", limit: 10 })
+get_logs({ channel: "console", search: "counter", since_id: 5 })
+```
+
+## API Details
+
+### get_diagnostics
+
+Consolidated endpoint that returns all log channels + HMR status + summary stats in a single call.
+
+**Parameters:**
+- `since_checkpoint` (boolean) — Filter events since last `clear_logs()`. Default: false
+- `since_ts` (number) — Filter events since Unix timestamp (ms)
+- `limit` (number) — Max events per channel. Default: 50, max: 200
+- `level` (string) — Filter by level (e.g. "error", "warn")
+- `search` (string) — Text search across event payloads (case-insensitive)
+
+**Returns:**
+```typescript
+{
+  hmr: {
+    last_update_at: number | null
+    last_error_at: number | null
+    last_error: string | undefined
+    update_count: number
+    error_count: number
+    pending: boolean
+  },
+  logs: {
+    console: HarnessEvent[]
+    errors: HarnessEvent[]
+    network: HarnessEvent[]
+  },
+  summary: {
+    error_count: number
+    warning_count: number
+    failed_requests: number
+    has_unhandled_rejections: boolean
+  },
+  checkpoint_ts: number | null
+}
+```
+
+**Example:**
+```javascript
+// After clear_logs(), get all new events
+const diag = await get_diagnostics({ since_checkpoint: true })
+
+if (diag.summary.error_count > 0) {
+  console.log('Errors:', diag.logs.errors)
+}
+```
+
+### wait_for_condition
+
+Server-side polling that blocks until a browser condition is truthy or timeout.
+
+**Parameters:**
+- `check` (string, required) — JavaScript expression to evaluate (must return truthy)
+- `timeout` (number) — Timeout in ms. Default: 5000
+- `interval` (number) — Poll interval in ms. Default: 100
+
+**Returns:**
+```typescript
+{
+  success: boolean
+  value: any  // final value of expression
+  elapsed_ms: number
+}
+```
+
+**Example:**
+```javascript
+// Wait for element to appear
+await wait_for_condition({
+  check: "document.querySelector('.success-message')",
+  timeout: 10000
+})
+
+// Wait for counter to reach value
+await wait_for_condition({
+  check: "window.__counter >= 5",
+  interval: 50
+})
+```
+
+### clear_logs (with checkpoint)
+
+Truncates log files and sets a checkpoint timestamp. Use `get_diagnostics({ since_checkpoint: true })` to see only new events after the checkpoint.
+
+**Parameters:**
+- `channels` (string[]) — Channels to clear. Default: all active. Pass `['all']` for all.
+
+**Example:**
+```javascript
+// Clear logs before making changes
+await clear_logs()
+
+// Make changes, wait for HMR...
+
+// Get only new events since checkpoint
+const diag = await get_diagnostics({ since_checkpoint: true })
 ```
 
 ## Options
