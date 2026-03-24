@@ -1125,16 +1125,66 @@ npx web-dev-mcp --target http://localhost:3000
 
 ---
 
+## Feature Matrix: Vite Plugin vs Gateway Proxy
+
+| Feature | Vite Plugin | Gateway Proxy |
+|---------|:-----------:|:-------------:|
+| **Framework support** | Vite only | Any HTTP server |
+| **Console capture** | ✅ via HMR | ✅ via WebSocket |
+| **Error capture** | ✅ | ✅ |
+| **Network capture** | ✅ (opt-in) | ✅ (opt-in) |
+| **eval_in_browser** | ✅ (RPC + HMR fallback) | ✅ (RPC only) |
+| **query_dom** | ✅ (RPC + HMR fallback) | ✅ (RPC only) |
+| **wait_for_condition** | ✅ | ✅ |
+| **CDP / Playwright connectOverCDP** | ✅ | not yet (could add) |
+| **HMR event tracking** | ✅ (update/error/pending) | ❌ (no HMR access) |
+| **React DevTools (bippy)** | ✅ (opt-in) | not yet (could add) |
+| **MCP notifications** | ✅ (error/HMR push) | ❌ |
+| **Auto-register .mcp.json** | ✅ | ❌ |
+| **NDJSON log files** | ✅ | ✅ |
+| **get_diagnostics** | ✅ (with HMR status) | ✅ (without HMR) |
+| **Separate process needed** | No (lives in Vite) | Yes (proxy on own port) |
+| **Survives dev server restart** | No (dies with Vite) | Yes |
+| **Multi-project** | No | Yes (gateway pattern) |
+| **Zero config injection** | ✅ (auto via transform) | ✅ (auto via proxy) |
+| **Works without changing app code** | Yes* (transform hook) | Yes (proxy injection) |
+| **Hot-reloads client code** | ✅ (virtual modules) | No (bundled) |
+
+*Vite plugin auto-injects via `transform` hook on files containing `createRoot`/`hydrateRoot`.
+
+### Analysis
+
+**Vite plugin advantages:**
+- HMR events (which files updated, errors, pending state) — useful for dev loop feedback
+- CDP/Playwright support built-in
+- React fiber tree via bippy
+- MCP push notifications on errors
+- No extra process or port
+- Client code hot-reloads during plugin development
+
+**Gateway advantages:**
+- Works with literally anything (Next.js, Rails, Django, static files, no framework)
+- Survives dev server restarts (MCP connections persist)
+- Multi-project support
+- No framework-specific code to maintain
+- Simpler mental model (one tool for everything)
+
+**Verdict:** The gateway covers ~80% of the Vite plugin's capabilities and adds universality + persistence. The missing 20% (HMR tracking, CDP, React DevTools, notifications) are all addable — none require Vite-specific APIs. HMR tracking is the only truly Vite-specific feature (requires `hotUpdate` hook), but it's also the least useful for a framework-agnostic tool.
+
+**Recommendation:** Focus on the gateway. The Vite plugin was a good proving ground for the architecture, but maintaining framework-specific integrations (Vite plugin, Next.js package) alongside a universal tool is unnecessary overhead.
+
+---
+
 ## Key Insights
 
 **Architecture:** The vite-live-dev-mcp architecture is fundamentally sound and framework-agnostic. The work is:
 1. Extract core code into reusable modules ✅
-2. Add HTTP proxy layer for injection ⚡ (new)
-3. Add dev server registry for multi-project ⚡ (new)
-4. Bundle client code for serving ⚡ (new)
+2. Add HTTP proxy layer for injection ✅
+3. Add dev server registry for multi-project ⚡ (not yet)
+4. Bundle client code for serving ✅
 5. Keep everything else the same
 
-**Deployment:** Single long-running gateway process serving all dev servers on the machine is more elegant and efficient than per-project proxies. This isn't about full daemon complexity (PID files, detached processes) - just a simple persistent gateway that acts as the single entry point for MCP + browser instrumentation. 
+**Deployment:** Single long-running gateway process serving all dev servers on the machine is more elegant and efficient than per-project proxies. This isn't about full daemon complexity (PID files, detached processes) - just a simple persistent gateway that acts as the single entry point for MCP + browser instrumentation.
 
-This is refactoring + small additions, not net-new architecture.
+**Consolidation:** Gateway should become the single package. Vite plugin and Next.js package were stepping stones — the universal proxy subsumes them both.
 
