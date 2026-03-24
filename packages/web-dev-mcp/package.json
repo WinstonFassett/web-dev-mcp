@@ -1,0 +1,49 @@
+{
+  "name": "web-dev-mcp",
+  "version": "0.1.0",
+  "description": "Universal web development MCP gateway — proxy any dev server with live browser observability for AI agents",
+  "type": "module",
+  "main": "dist/gateway.js",
+  "types": "dist/gateway.d.ts",
+  "bin": {
+    "web-dev-mcp": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/gateway.js",
+      "types": "./dist/gateway.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && node build-client.mjs",
+    "build:client": "node build-client.mjs",
+    "dev": "tsc --watch",
+    "test": "node dist/cli.js"
+  },
+  "keywords": [
+    "mcp",
+    "web",
+    "devtools",
+    "proxy",
+    "ai"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.0",
+    "capnweb": "^0.6.1",
+    "chobitsu": "^1.8.6",
+    "http-proxy": "^1.18.1",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/http-proxy": "^1.17.16",
+    "@types/node": "^25.5.0",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.25.0",
+    "playwright": "^1.58.2",
+    "typescript": "^5.8.0"
+  }
+}
