@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.next/
 test-app/.claude/
 test-app/.cursor/
 test-app/.windsurf/
