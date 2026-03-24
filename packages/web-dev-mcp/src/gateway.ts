@@ -1,7 +1,10 @@
 import http from 'node:http'
-import { readFileSync } from 'node:fs'
+import https from 'node:https'
+import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { homedir } from 'node:os'
+import { execSync } from 'node:child_process'
 import httpProxy from 'http-proxy'
 import { WebSocketServer } from 'ws'
 import type { GatewayOptions } from './types.js'
@@ -9,8 +12,11 @@ import { initSession, type SessionState } from './session.js'
 import { ConsoleWriter } from './writers/console.js'
 import { ErrorsWriter } from './writers/errors.js'
 import { NetworkWriter } from './writers/network.js'
-import { createMcpMiddleware, type McpContext } from './mcp-server.js'
+import { DevEventsWriter, type BuildEventPayload } from './writers/dev-events.js'
+import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './mcp-server.js'
 import { setupRpcWebSocket } from './rpc-server.js'
+import { createCdpMiddleware, setupCdpWebSocket, type CdpContext } from './cdp-server.js'
+import { autoRegister } from './auto-register.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -18,12 +24,45 @@ interface Writers {
   console: ConsoleWriter
   errors: ErrorsWriter
   network?: NetworkWriter
+  devEvents: DevEventsWriter
+}
+
+function generateSelfSignedCert(): { cert: string; key: string } {
+  const certDir = join(homedir(), '.web-dev-mcp', 'certs')
+  const certPath = join(certDir, 'cert.pem')
+  const keyPath = join(certDir, 'key.pem')
+
+  if (existsSync(certPath) && existsSync(keyPath)) {
+    return {
+      cert: readFileSync(certPath, 'utf-8'),
+      key: readFileSync(keyPath, 'utf-8'),
+    }
+  }
+
+  mkdirSync(certDir, { recursive: true })
+
+  execSync(
+    `openssl req -x509 -newkey rsa:2048 -keyout "${keyPath}" -out "${certPath}" -days 365 -nodes -subj "/CN=localhost"`,
+    { stdio: 'pipe' }
+  )
+
+  return {
+    cert: readFileSync(certPath, 'utf-8'),
+    key: readFileSync(keyPath, 'utf-8'),
+  }
+}
+
+function addCorsHeaders(res: http.ServerResponse) {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 }
 
 export async function startGateway(options: GatewayOptions) {
   const port = options.port ?? 3333
   const target = options.target
   const mcpPath = '/__mcp'
+  const useHttps = options.https ?? false
 
   // Load bundled client script
   let clientScript: string
@@ -55,7 +94,6 @@ export async function startGateway(options: GatewayOptions) {
     const isHtml = contentType.includes('text/html')
 
     if (!isHtml) {
-      // Pass through non-HTML as-is
       (res as http.ServerResponse).writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
       proxyRes.pipe(res as http.ServerResponse)
       return
@@ -67,14 +105,19 @@ export async function startGateway(options: GatewayOptions) {
     proxyRes.on('end', () => {
       let html = Buffer.concat(chunks).toString('utf-8')
 
-      const scriptTag = `<script src="/__client.js"></script>`
+      // Build injection: optional react flag + client script
+      let injection = ''
+      if (options.react) {
+        injection += `<script>window.__WEB_DEV_MCP_REACT__=true</script>`
+      }
+      injection += `<script src="/__client.js"></script>`
 
       if (html.includes('</head>')) {
-        html = html.replace('</head>', scriptTag + '</head>')
+        html = html.replace('</head>', injection + '</head>')
       } else if (html.includes('</body>')) {
-        html = html.replace('</body>', scriptTag + '</body>')
+        html = html.replace('</body>', injection + '</body>')
       } else {
-        html += scriptTag
+        html += injection
       }
 
       const headers = { ...proxyRes.headers }
@@ -87,36 +130,51 @@ export async function startGateway(options: GatewayOptions) {
   })
 
   // Initialize session
-  const serverUrl = `http://localhost:${port}`
+  const protocol = useHttps ? 'https' : 'http'
+  const serverUrl = `${protocol}://localhost:${port}`
   const session = initSession(options, serverUrl, mcpPath)
 
   // Initialize writers
   const writers: Writers = {
     console: new ConsoleWriter(session.files.console, options.maxFileSizeMb),
     errors: new ErrorsWriter(session.files.errors, options.maxFileSizeMb),
+    devEvents: new DevEventsWriter(session.files['dev-events'], options.maxFileSizeMb),
   }
   if (options.network && session.files.network) {
     writers.network = new NetworkWriter(session.files.network, options.maxFileSizeMb)
   }
 
+  // CDP context
+  const cdpCtx: CdpContext = { serverUrl }
+
   // MCP context
   const mcpCtx: McpContext = {
     session,
     connectedClients: 0,
+    devEventsWriter: writers.devEvents,
   }
 
   const mcpMiddleware = createMcpMiddleware(mcpPath, mcpCtx)
+  const cdpMiddleware = createCdpMiddleware(cdpCtx)
 
-  // Create HTTP server
-  const server = http.createServer((req, res) => {
+  // Request handler
+  function handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     const url = req.url ?? ''
+
+    // CORS preflight
+    if (req.method === 'OPTIONS') {
+      addCorsHeaders(res)
+      res.writeHead(204)
+      res.end()
+      return
+    }
 
     // Serve client script
     if (url === '/__client.js') {
+      addCorsHeaders(res)
       res.writeHead(200, {
         'Content-Type': 'application/javascript',
         'Cache-Control': 'no-cache',
-        'Access-Control-Allow-Origin': '*',
       })
       res.end(clientScript)
       return
@@ -124,7 +182,17 @@ export async function startGateway(options: GatewayOptions) {
 
     // MCP endpoints
     if (url.startsWith(mcpPath)) {
+      addCorsHeaders(res)
       mcpMiddleware(req, res, () => {
+        res.writeHead(404)
+        res.end('Not found')
+      })
+      return
+    }
+
+    // CDP endpoints
+    if (url.startsWith('/__cdp')) {
+      cdpMiddleware(req, res, () => {
         res.writeHead(404)
         res.end('Not found')
       })
@@ -133,6 +201,7 @@ export async function startGateway(options: GatewayOptions) {
 
     // Gateway status page
     if (url === '/__status') {
+      addCorsHeaders(res)
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         gateway: 'web-dev-mcp',
@@ -143,26 +212,55 @@ export async function startGateway(options: GatewayOptions) {
       return
     }
 
-    // Proxy everything else (selfHandleResponse handles injection in proxyRes)
+    // Proxy everything else
     proxy.web(req, res)
-  })
+  }
+
+  // Create server (HTTP or HTTPS)
+  let server: http.Server | https.Server
+  if (useHttps) {
+    let cert: string, key: string
+    if (options.cert && options.key) {
+      cert = readFileSync(options.cert, 'utf-8')
+      key = readFileSync(options.key, 'utf-8')
+    } else {
+      const generated = generateSelfSignedCert()
+      cert = generated.cert
+      key = generated.key
+    }
+    server = https.createServer({ cert, key }, handleRequest)
+  } else {
+    server = http.createServer(handleRequest)
+  }
 
   // Setup events WebSocket (browser → server for console/errors/network)
   const eventsWss = new WebSocketServer({ noServer: true })
 
-  // Setup RPC WebSocket (capnweb for eval/queryDom) — uses noServer mode
-  const rpcWss = setupRpcWebSocket(server, '/__rpc')
+  // Setup dev-events WebSocket (adapters → server for HMR/build events)
+  const devEventsWss = new WebSocketServer({ noServer: true })
 
-  // Single upgrade handler for all WebSocket paths
-  server.on('upgrade', (request, socket, head) => {
+  // Setup RPC WebSocket (capnweb for eval/queryDom)
+  setupRpcWebSocket(server, '/__rpc')
+
+  // Setup CDP WebSocket
+  setupCdpWebSocket(server, cdpCtx)
+
+  // Upgrade handler for events + dev-events + proxy WS
+  server.on('upgrade', (request: http.IncomingMessage, socket: any, head: Buffer) => {
     const url = request.url ?? ''
 
     if (url === '/__events' || url.startsWith('/__events?')) {
       eventsWss.handleUpgrade(request, socket, head, (ws) => {
         eventsWss.emit('connection', ws, request)
       })
+    } else if (url === '/__dev-events' || url.startsWith('/__dev-events?')) {
+      devEventsWss.handleUpgrade(request, socket, head, (ws) => {
+        devEventsWss.emit('connection', ws, request)
+      })
     } else if (url === '/__rpc' || url.startsWith('/__rpc?')) {
       // Handled by setupRpcWebSocket's own upgrade listener
+    } else if (url.startsWith('/__cdp/devtools/')) {
+      // Handled by setupCdpWebSocket's own upgrade listener
     } else {
       // Proxy WebSocket to target
       proxy.ws(request, socket, head)
@@ -170,8 +268,6 @@ export async function startGateway(options: GatewayOptions) {
   })
 
   eventsWss.on('connection', (ws) => {
-    console.log('[web-dev-mcp] Events WebSocket connected')
-
     ws.on('message', (data) => {
       try {
         const msg = JSON.parse(data.toString())
@@ -181,6 +277,8 @@ export async function startGateway(options: GatewayOptions) {
           writers.console.write(payload)
         } else if (channel === 'error') {
           writers.errors.write(payload)
+          // Push notification to MCP clients
+          sendNotificationToAll('errors', payload.message ?? 'Error', session.files.errors ?? '', `get_diagnostics`)
         } else if (channel === 'network' && writers.network) {
           writers.network.write(payload)
         }
@@ -188,20 +286,48 @@ export async function startGateway(options: GatewayOptions) {
         // Ignore malformed messages
       }
     })
+  })
+
+  devEventsWss.on('connection', (ws) => {
+    console.log('[web-dev-mcp] Dev adapter connected')
+
+    ws.on('message', (data) => {
+      try {
+        const payload = JSON.parse(data.toString()) as BuildEventPayload
+        writers.devEvents.write(payload)
+
+        if (payload.type === 'build:error') {
+          sendNotificationToAll('build', payload.error ?? 'Build error', session.files['dev-events'] ?? '', `get_build_status`)
+        }
+      } catch {
+        // Ignore malformed messages
+      }
+    })
 
     ws.on('close', () => {
-      console.log('[web-dev-mcp] Events WebSocket disconnected')
+      console.log('[web-dev-mcp] Dev adapter disconnected')
     })
   })
 
+  // Auto-register
+  if (options.autoRegister) {
+    const registered = autoRegister(process.cwd(), session.info.mcpUrl)
+    for (const path of registered) {
+      console.log(`  Auto-registered: ${path}`)
+    }
+  }
+
   server.listen(port, () => {
+    const proto = useHttps ? 'https' : 'http'
     console.log('')
     console.log(`  web-dev-mcp gateway`)
     console.log(`  ───────────────────────────────`)
-    console.log(`  Proxy:   http://localhost:${port}`)
+    console.log(`  Proxy:   ${proto}://localhost:${port}`)
     console.log(`  Target:  ${target}`)
-    console.log(`  MCP:     http://localhost:${port}${mcpPath}/sse`)
+    console.log(`  MCP:     ${proto}://localhost:${port}${mcpPath}/sse`)
+    console.log(`  CDP:     ${proto}://localhost:${port}/__cdp`)
     console.log(`  Logs:    ${session.logDir}`)
+    if (useHttps) console.log(`  HTTPS:   enabled`)
     console.log('')
   })
 

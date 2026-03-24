@@ -1,14 +1,18 @@
 // Browser client for web-dev-mcp gateway
 // Injected into proxied HTML pages via <script src="/__client.js">
-// Patches console.*, error handlers, optionally fetch/XHR
+// Or loaded via Vite adapter with __WEB_DEV_MCP_ORIGIN__ set for cross-origin mode
+//
+// Patches console.*, error handlers, fetch/XHR
 // Sends events to gateway via WebSocket, connects RPC for eval/queryDom
 
 ;(function() {
-  // Prevent double-initialization
   if ((window as any).__WEB_DEV_MCP_LOADED__) return
   ;(window as any).__WEB_DEV_MCP_LOADED__ = true
 
-  const gatewayOrigin = window.location.origin
+  // Cross-origin support: when loaded via framework adapter, gateway is on a different origin
+  const gatewayOrigin = (window as any).__WEB_DEV_MCP_ORIGIN__ || window.location.origin
+  const gatewayHost = gatewayOrigin.replace(/^https?:\/\//, '')
+  const gatewayWsProtocol = gatewayOrigin.startsWith('https') ? 'wss:' : 'ws:'
 
   // --- Events WebSocket (browser → server) ---
   let eventsWs: WebSocket | null = null
@@ -16,12 +20,10 @@
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
   function connectEvents() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = protocol + '//' + window.location.host + '/__events'
+    const url = gatewayWsProtocol + '//' + gatewayHost + '/__events'
     eventsWs = new WebSocket(url)
 
     eventsWs.onopen = () => {
-      // Flush queued events
       for (const msg of eventQueue) {
         eventsWs!.send(msg)
       }
@@ -30,7 +32,6 @@
 
     eventsWs.onclose = () => {
       eventsWs = null
-      // Reconnect after 2s
       if (!reconnectTimer) {
         reconnectTimer = setTimeout(() => {
           reconnectTimer = null
@@ -39,9 +40,7 @@
       }
     }
 
-    eventsWs.onerror = () => {
-      // Will trigger onclose
-    }
+    eventsWs.onerror = () => {}
   }
 
   function sendEvent(channel: string, payload: any) {
@@ -49,7 +48,6 @@
     if (eventsWs && eventsWs.readyState === WebSocket.OPEN) {
       eventsWs.send(msg)
     } else {
-      // Queue if not connected yet
       if (eventQueue.length < 1000) {
         eventQueue.push(msg)
       }
@@ -71,10 +69,8 @@
 
   for (const level of LEVELS) {
     (console as any)[level] = (...args: any[]) => {
-      // Call original first
       (originalConsole as any)[level](...args)
 
-      // Serialize args, truncate each at 2000 chars
       const serializedArgs = args.map((arg: any) => {
         try {
           const s = typeof arg === 'string' ? arg : JSON.stringify(arg)
@@ -130,7 +126,6 @@
     return EXCLUDE_PATTERNS.some(p => url.includes(p))
   }
 
-  // Patch fetch
   const originalFetch = window.fetch.bind(window)
   window.fetch = async (input: any, init?: any) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
@@ -151,7 +146,6 @@
     return response
   }
 
-  // Patch XMLHttpRequest
   const XHROpen = XMLHttpRequest.prototype.open
   const XHRSend = XMLHttpRequest.prototype.send
   XMLHttpRequest.prototype.open = function(method: string, url: any, ...rest: any[]) {
@@ -176,9 +170,76 @@
     return XHRSend.call(this, body)
   }
 
-  // --- capnweb RPC (for eval/queryDom from server) ---
+  // --- React DevTools (bippy) — opt-in via __WEB_DEV_MCP_REACT__ flag ---
+  let reactTreeGetter: ((opts: any) => any) | null = null
+
+  if ((window as any).__WEB_DEV_MCP_REACT__) {
+    import('bippy').then(({ instrument, traverseFiber, getDisplayName, isCompositeFiber, traverseProps, traverseState }) => {
+      let fiberRoot: any = null
+
+      instrument({
+        onCommitFiberRoot(_rendererID: any, root: any) {
+          fiberRoot = root
+        },
+      })
+
+      function truncateValue(val: any, maxLen = 200) {
+        try {
+          const s = typeof val === 'string' ? val : JSON.stringify(val)
+          return s && s.length > maxLen ? s.slice(0, maxLen) + '\u2026' : (s ?? 'undefined')
+        } catch {
+          return String(val)
+        }
+      }
+
+      reactTreeGetter = (request: any) => {
+        const maxDepth = Math.min(request.depth ?? 8, 20)
+
+        if (!fiberRoot) {
+          return { snapshot_at: Date.now(), total_components: 0, tree: [] }
+        }
+
+        const nodes: any[] = []
+        traverseFiber(fiberRoot, (f: any) => {
+          if (!isCompositeFiber(f)) return
+
+          const name = getDisplayName(f) ?? 'Anonymous'
+          if (request.filter_name && !name.toLowerCase().includes(request.filter_name.toLowerCase())) return
+
+          const node: any = { name, children: [] }
+
+          if (request.include_props !== false) {
+            const props: any = {}
+            traverseProps(f, (propName: string, nextValue: any) => {
+              if (propName !== 'children') props[propName] = truncateValue(nextValue)
+            })
+            if (Object.keys(props).length > 0) node.props = props
+          }
+
+          if (request.include_state) {
+            const state: any = {}
+            let stateIdx = 0
+            traverseState(f, (nextValue: any) => {
+              state[`state_${stateIdx++}`] = truncateValue(nextValue)
+            })
+            if (Object.keys(state).length > 0) node.state = state
+          }
+
+          nodes.push(node)
+        })
+
+        return { snapshot_at: Date.now(), total_components: nodes.length, tree: nodes }
+      }
+
+      originalConsole.log('[web-dev-mcp] React DevTools (bippy) initialized')
+    }).catch(() => {
+      originalConsole.warn('[web-dev-mcp] bippy not available — install bippy for React DevTools')
+    })
+  }
+
+  // --- capnweb RPC (for eval/queryDom/getReactTree from server) ---
   import('capnweb').then(({ RpcTarget, newWebSocketRpcSession }) => {
-    // @ts-ignore - chobitsu import
+    // @ts-ignore
     import('chobitsu').then((chobitsuModule) => {
       const chobitsu = chobitsuModule.default || chobitsuModule
 
@@ -193,7 +254,6 @@
       }
       const browserId = getBrowserId()
 
-      // Proxy-based wrapper for DOM objects
       class AnyTarget extends RpcTarget {
         #target: any
         #wrapCache = new WeakMap()
@@ -205,16 +265,13 @@
             get: (_: any, prop: string) => {
               if (prop === 'then') return undefined
               if (prop === '__rpcTarget') return true
-
               const val = this.#target[prop]
-
               if (typeof val === 'function') {
                 return (...args: any[]) => {
                   const result = val.apply(this.#target, args)
                   return this.#wrap(result)
                 }
               }
-
               return this.#wrap(val)
             },
             set: (_: any, prop: string, value: any) => {
@@ -233,7 +290,6 @@
           if (typeof val !== 'object' && typeof val !== 'function') return val
           if (val.__rpcTarget) return val
           if (this.#wrapCache.has(val)) return this.#wrapCache.get(val)
-
           if (val instanceof Node) {
             const wrapped = new AnyTarget(val)
             this.#wrapCache.set(val, wrapped)
@@ -259,7 +315,6 @@
             this.#wrapCache.set(val, wrapped)
             return wrapped
           }
-
           try {
             const wrapped = new AnyTarget(val)
             this.#wrapCache.set(val, wrapped)
@@ -312,12 +367,10 @@
 
         queryDom(selector: string, options: any = {}) {
           const { max_depth = 3, attributes = ['id', 'class', 'href', 'src', 'value', 'type', 'placeholder', 'role', 'aria-label'], text_length = 100 } = options
-
           const root = selector ? document.querySelector(selector) : document.body
           if (!root) return { html: '', element_count: 0, truncated: false, error: 'No element found' }
 
           let elementCount = 0
-
           function serializeNode(node: any, depth: number, indent: number): string {
             if (depth > max_depth) return '\u2026'
             if (node.nodeType === 3) {
@@ -326,11 +379,9 @@
               return text.length > text_length ? text.slice(0, text_length) + '\u2026' : text
             }
             if (node.nodeType !== 1) return ''
-
             const el = node
             const tag = el.tagName.toLowerCase()
             if (['script', 'style', 'svg', 'noscript', 'link', 'meta'].includes(tag)) return ''
-
             elementCount++
             const pad = '  '.repeat(indent)
             let attrs = ''
@@ -342,7 +393,6 @@
               }
             }
             if (['br', 'hr', 'img', 'input'].includes(tag)) return pad + '<' + tag + attrs + '/>'
-
             const children = Array.from(el.childNodes)
             const childStrings: string[] = []
             for (const child of children) {
@@ -364,14 +414,17 @@
           let html = serializeNode(root, 0, 0)
           const truncated = html.length > 20480
           if (truncated) html = html.slice(0, 20480) + '\n\u2026(truncated)'
-
           return { html, element_count: elementCount, truncated }
+        }
+
+        getReactTree(opts: any) {
+          if (reactTreeGetter) return reactTreeGetter(opts)
+          return { error: 'React DevTools not enabled. Start gateway with --react flag.' }
         }
       }
 
-      // Connect RPC
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const rpcUrl = protocol + '//' + window.location.host + '/__rpc'
+      // Connect RPC to gateway (may be cross-origin)
+      const rpcUrl = gatewayWsProtocol + '//' + gatewayHost + '/__rpc'
       const browserApi = new BrowserApi()
 
       try {

@@ -2,6 +2,11 @@ export interface GatewayOptions {
   target: string
   port?: number
   network?: boolean
+  react?: boolean
+  https?: boolean
+  cert?: string
+  key?: string
+  autoRegister?: boolean
   logDir?: string
   maxFileSizeMb?: number
 }
@@ -46,7 +51,7 @@ export interface SessionInfo {
   startedAt: number
 }
 
-export interface HmrStatus {
+export interface BuildStatus {
   last_update_at: number | null
   last_error_at: number | null
   last_error: string | undefined
@@ -63,7 +68,7 @@ export interface DiagnosticSummary {
 }
 
 export interface DiagnosticsResult {
-  hmr: HmrStatus
+  build: BuildStatus
   logs: {
     console: HarnessEvent[]
     errors: HarnessEvent[]

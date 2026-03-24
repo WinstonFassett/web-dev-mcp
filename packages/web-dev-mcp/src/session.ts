@@ -36,7 +36,7 @@ export function initSession(
 
   mkdirSync(logDir, { recursive: true })
 
-  const channels: string[] = ['console', 'errors']
+  const channels: string[] = ['console', 'errors', 'dev-events']
   if (options.network) channels.push('network')
 
   const files: Record<string, string> = {}

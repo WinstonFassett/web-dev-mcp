@@ -6,10 +6,12 @@ import type { SessionState } from './session.js'
 import { truncateChannelFiles } from './session.js'
 import { queryLogs, getDiagnostics } from './log-reader.js'
 import { getBrowserStub } from './rpc-server.js'
+import type { DevEventsWriter } from './writers/dev-events.js'
 
 export interface McpContext {
   session: SessionState
   connectedClients: number
+  devEventsWriter?: DevEventsWriter
 }
 
 function createMcpServerInstance(ctx: McpContext): McpServer {
@@ -73,7 +75,7 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
 
   mcp.tool(
     'get_diagnostics',
-    'Consolidated diagnostic snapshot: logs + summary. Single call replaces multiple get_logs calls.',
+    'Consolidated diagnostic snapshot: logs + build status + summary. Single call replaces multiple get_logs calls.',
     {
       since_checkpoint: z.boolean().optional().describe('Use checkpoint from last clear_logs'),
       since_ts: z.number().optional().describe('Unix ms timestamp'),
@@ -88,9 +90,23 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
         limit: args.limit,
         level: args.level,
         search: args.search,
-      })
+      }, ctx.devEventsWriter)
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+      }
+    },
+  )
+
+  mcp.tool(
+    'get_build_status',
+    'Returns build/HMR update and error counts from connected dev server adapter. Lightweight poll.',
+    { since: z.number().optional().describe('Unix ms timestamp, default: session start') },
+    async (args) => {
+      const status = ctx.devEventsWriter
+        ? ctx.devEventsWriter.getStatus(args.since)
+        : { last_update_at: null, last_error_at: null, last_error: undefined, update_count: 0, error_count: 0, pending: false }
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(status, null, 2) }],
       }
     },
   )
@@ -175,7 +191,7 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
     'get_logs',
     'Query log files with filtering and pagination.',
     {
-      channel: z.string().describe('Channel to query: console, errors, network'),
+      channel: z.string().describe('Channel to query: console, errors, network, dev-events'),
       since_id: z.number().optional().describe('Return events after this ID.'),
       limit: z.number().optional().describe('Max events to return (default: 50, max: 200)'),
       level: z.string().optional().describe('Filter by level'),
@@ -230,10 +246,58 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
     },
   )
 
+  mcp.tool(
+    'get_react_tree',
+    'React component tree snapshot via bippy. Requires --react flag.',
+    {
+      depth: z.number().optional().describe('Max tree depth (default: 8, max: 20)'),
+      filter_name: z.string().optional().describe('Include only components matching this pattern'),
+      include_props: z.boolean().optional().describe('Include component props (default: true)'),
+      include_state: z.boolean().optional().describe('Include component state (default: false)'),
+    },
+    async (args) => {
+      const stub = getBrowserStub()
+      if (!stub) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: 'No browser connected.' }, null, 2) }],
+          isError: true,
+        }
+      }
+      try {
+        const result = await (stub as any).getReactTree({
+          depth: args.depth,
+          filter_name: args.filter_name,
+          include_props: args.include_props,
+          include_state: args.include_state,
+        })
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+        }
+      } catch (err: any) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: err.message ?? String(err) }, null, 2) }],
+          isError: true,
+        }
+      }
+    },
+  )
+
   return mcp
 }
 
+// Map of sessionId → { transport, server } for routing POST messages
 const connections = new Map<string, { transport: SSEServerTransport; server: McpServer }>()
+
+export function sendNotificationToAll(channel: string, message: string, file: string, hint: string): void {
+  for (const { server } of connections.values()) {
+    server.server.sendLoggingMessage({
+      level: 'error',
+      data: JSON.stringify({ channel, message, file, hint }),
+    }).catch(() => {
+      // Fire and forget
+    })
+  }
+}
 
 export function createMcpMiddleware(
   mcpPath: string,

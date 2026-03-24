@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import type { HarnessEvent, DiagnosticsResult, DiagnosticSummary, ConsolePayload, ErrorPayload, NetworkPayload } from './types.js'
 import type { SessionState } from './session.js'
+import type { DevEventsWriter } from './writers/dev-events.js'
 
 export interface LogQuery {
   channel: string
@@ -82,7 +83,8 @@ export interface DiagnosticsQuery {
 export function getDiagnostics(
   files: Record<string, string>,
   session: SessionState,
-  query: DiagnosticsQuery
+  query: DiagnosticsQuery,
+  devEventsWriter?: DevEventsWriter,
 ): DiagnosticsResult {
   const since_ts = query.since_checkpoint && session.checkpointTs
     ? session.checkpointTs
@@ -139,8 +141,12 @@ export function getDiagnostics(
     }
   }
 
+  const buildStatus = devEventsWriter
+    ? devEventsWriter.getStatus(since_ts)
+    : { last_update_at: null, last_error_at: null, last_error: undefined, update_count: 0, error_count: 0, pending: false }
+
   return {
-    hmr: { last_update_at: null, last_error_at: null, last_error: undefined, update_count: 0, error_count: 0, pending: false },
+    build: buildStatus,
     logs: {
       console: consoleResult.events,
       errors: errorsResult.events,
