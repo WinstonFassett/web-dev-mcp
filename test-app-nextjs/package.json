@@ -4,15 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node server.js --webpack",
+    "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "node server.js"
+    "start": "next start"
   },
   "dependencies": {
     "next": "^16.2.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "next-live-dev-mcp": "file:../packages/next-live-dev-mcp"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/node": "^22",
