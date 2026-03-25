@@ -9,3 +9,6 @@ test-app/src/*.js
 # MCP log directories
 .vite-mcp/
 .web-dev-mcp/
+.playwright-mcp/
+
+.vscode/settings.json
