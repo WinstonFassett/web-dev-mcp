@@ -1,0 +1,1 @@
+{"version":3,"file":"console.d.ts","sourceRoot":"","sources":["../../src/writers/console.ts"],"names":[],"mappings":"AACA,OAAO,KAAK,EAAE,cAAc,EAAE,MAAM,aAAa,CAAA;AAEjD,qBAAa,aAAa;IACxB,OAAO,CAAC,MAAM,CAAc;gBAEhB,QAAQ,EAAE,MAAM,EAAE,aAAa,CAAC,EAAE,MAAM;IAIpD,KAAK,CAAC,OAAO,EAAE,cAAc;IAI7B,OAAO;CAGR"}

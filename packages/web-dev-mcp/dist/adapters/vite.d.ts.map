@@ -1,0 +1,1 @@
+{"version":3,"file":"vite.d.ts","sourceRoot":"","sources":["../../src/adapters/vite.ts"],"names":[],"mappings":"AAIA,OAAO,KAAK,EAAE,MAAM,EAA2C,MAAM,MAAM,CAAA;AAW3E,MAAM,WAAW,kBAAkB;IACjC,OAAO,CAAC,EAAE,MAAM,CAAA;IAChB,KAAK,CAAC,EAAE,OAAO,CAAA;CAChB;AAED,wBAAgB,SAAS,CAAC,OAAO,GAAE,kBAAuB,GAAG,MAAM,CAkFlE"}
