@@ -1,6 +1,3 @@
-// Import MCP client for browser instrumentation
-import 'next-live-dev-mcp/client'
-
 export const metadata = {
   title: 'Next.js MCP Test App',
   description: 'Testing next-live-dev-mcp',

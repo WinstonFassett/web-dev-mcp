@@ -5,6 +5,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { execSync } from 'node:child_process'
+import { gunzipSync } from 'node:zlib'
 import httpProxy from 'http-proxy'
 import { WebSocketServer } from 'ws'
 import type { GatewayOptions } from './types.js'
@@ -101,9 +102,26 @@ export async function startGateway(options: GatewayOptions) {
 
     // Buffer HTML to inject client script
     const chunks: Buffer[] = []
+    const contentEncoding = proxyRes.headers['content-encoding']
+
     proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk))
     proxyRes.on('end', () => {
-      let html = Buffer.concat(chunks).toString('utf-8')
+      let buffer = Buffer.concat(chunks)
+
+      // Decompress if gzipped
+      if (contentEncoding === 'gzip') {
+        try {
+          buffer = gunzipSync(buffer)
+        } catch (err) {
+          console.error('[web-dev-mcp] Failed to decompress gzip:', err)
+          // Send as-is if decompression fails
+          ;(res as http.ServerResponse).writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
+          ;(res as http.ServerResponse).end(buffer)
+          return
+        }
+      }
+
+      let html = buffer.toString('utf-8')
 
       // Build injection: optional react flag + client script
       let injection = ''
