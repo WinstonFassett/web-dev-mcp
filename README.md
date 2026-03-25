@@ -67,9 +67,51 @@ On startup:
   ➜  registered with gateway: http://localhost:3333/__mcp/sse
 ```
 
+### Next.js Integration
+
+For Next.js apps, use the native config wrapper for zero-setup integration:
+
+```bash
+npm install -D web-dev-mcp
+```
+
+```js
+// next.config.js
+import { withWebDevMcp } from 'web-dev-mcp/nextjs'
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // your existing config
+}
+
+export default withWebDevMcp(nextConfig, {
+  gatewayUrl: 'http://localhost:3333',  // gateway URL (default)
+  network: true,                         // opt-in: log fetch/XHR
+  enabled: true,                         // default: dev only
+})
+```
+
+Start the gateway in one terminal:
+
+```bash
+npx web-dev-mcp --target http://localhost:3000 --port 3333
+```
+
+Then start Next.js normally in another terminal:
+
+```bash
+npm run dev
+```
+
+The wrapper automatically:
+- Injects browser instrumentation via webpack entry points
+- Connects to gateway via WebSocket (no CORS issues)
+- Patches console, errors, and network requests (opt-in)
+- Requires **zero changes** to your app code or layouts
+
 ### Universal Gateway (Proxy Mode)
 
-For Next.js, Remix, or any framework without a Vite plugin:
+For Remix or any framework without a native integration:
 
 ```bash
 npx web-dev-mcp --target http://localhost:3000 --port 3333
@@ -341,6 +383,18 @@ viteLiveDevMcp({
 })
 ```
 
+### Next.js Options
+
+```ts
+withWebDevMcp(nextConfig, {
+  gatewayUrl: 'http://localhost:3333',  // Gateway URL (default)
+  network: false,                        // Log fetch/XHR (default: false)
+  enabled: process.env.NODE_ENV === 'development',  // Enable only in dev (default)
+})
+```
+
+The wrapper uses webpack entry injection to automatically load browser instrumentation. No changes to app code or layouts required.
+
 ### Gateway CLI Options
 
 ```bash
@@ -457,7 +511,7 @@ The `get_react_tree` MCP tool returns component names, props, and state.
 ## Packages
 
 - `vite-live-dev-mcp` — Vite plugin (this package)
-- `web-dev-mcp` — Universal gateway in `packages/web-dev-mcp/`
+- `web-dev-mcp` — Universal gateway + Next.js integration (`packages/web-dev-mcp/`)
 
 ## Architecture
 

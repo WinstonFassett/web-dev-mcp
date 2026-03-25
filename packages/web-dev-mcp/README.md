@@ -17,6 +17,42 @@ npx web-dev-mcp --target http://localhost:3000
 # LLM: Connect MCP to http://localhost:3333/__mcp/sse
 ```
 
+## Next.js Integration
+
+For Next.js apps, use the native config wrapper instead of the generic proxy:
+
+```bash
+npm install -D web-dev-mcp
+```
+
+```js
+// next.config.js
+import { withWebDevMcp } from 'web-dev-mcp/nextjs'
+
+const nextConfig = {
+  // your config
+}
+
+export default withWebDevMcp(nextConfig, {
+  gatewayUrl: 'http://localhost:3333',
+  network: true,
+})
+```
+
+Start the gateway in one terminal:
+
+```bash
+npx web-dev-mcp --target http://localhost:3000 --port 3333
+```
+
+Then start Next.js normally:
+
+```bash
+npm run dev
+```
+
+The wrapper automatically injects browser instrumentation via webpack — no manual code changes required.
+
 ## How It Works
 
 ```
