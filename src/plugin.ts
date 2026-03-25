@@ -154,6 +154,45 @@ export function viteLiveDevMcp(options: ViteLiveDevMcpOptions = {}): Plugin {
           }
         }
 
+        // Register with gateway (hybrid architecture)
+        if (options.gateway) {
+          const gatewayUrl = typeof options.gateway === 'string'
+            ? options.gateway
+            : 'http://localhost:3333'
+
+          const port = Number(serverUrl.split(':').pop())
+
+          // Use IIFE for async registration
+          ;(async () => {
+            try {
+              const response = await fetch(`${gatewayUrl}/__gateway/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  type: 'vite',
+                  port,
+                  pid: process.pid,
+                  name: config.root.split('/').pop() || 'vite-app',
+                  rpcEndpoint: `${serverUrl.replace('http', 'ws')}/__rpc`,
+                  mcpEndpoint: session.info.mcpUrl,
+                  logPaths: session.files,
+                }),
+              })
+
+              if (response.ok) {
+                const data = await response.json()
+                if (options.printUrl !== false) {
+                  config.logger.info(`  ➜  registered with gateway: ${data.gatewayMcpUrl}`)
+                }
+              } else {
+                config.logger.warn(`  ⚠  gateway registration failed: ${response.statusText}`)
+              }
+            } catch (err) {
+              config.logger.warn(`  ⚠  gateway not reachable at ${gatewayUrl}`)
+            }
+          })()
+        }
+
         if (options.printUrl !== false) {
           config.logger.info(`  ➜  vite-live-dev-mcp: ${session.info.mcpUrl}`)
           config.logger.info(`  ➜  CDP endpoint: ${serverUrl}/__cdp`)

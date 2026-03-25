@@ -182,6 +182,7 @@ export async function startGateway(options: GatewayOptions) {
     session,
     connectedClients: 0,
     devEventsWriter: writers.devEvents,
+    registry,
   }
 
   const mcpMiddleware = createMcpMiddleware(mcpPath, mcpCtx)

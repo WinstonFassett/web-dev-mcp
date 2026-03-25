@@ -7,11 +7,29 @@ import { truncateChannelFiles } from './session.js'
 import { queryLogs, getDiagnostics } from './log-reader.js'
 import { getBrowserStub } from './rpc-server.js'
 import type { DevEventsWriter } from './writers/dev-events.js'
+import type { ServerRegistry } from './registry.js'
 
 export interface McpContext {
   session: SessionState
   connectedClients: number
   devEventsWriter?: DevEventsWriter
+  registry?: ServerRegistry
+}
+
+/**
+ * Helper: Get log file paths for reading logs.
+ * Prefers registered server's log paths (hybrid mode) over gateway's own.
+ */
+function getLogPaths(ctx: McpContext): Record<string, string> {
+  // Check if we have a registered server with log paths (hybrid mode)
+  if (ctx.registry) {
+    const latestServer = ctx.registry.getLatest()
+    if (latestServer?.logPaths) {
+      return latestServer.logPaths
+    }
+  }
+  // Fallback to gateway's own log files (proxy mode)
+  return ctx.session.files
 }
 
 function createMcpServerInstance(ctx: McpContext): McpServer {
@@ -25,20 +43,33 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
     'Returns log directory, file paths, and server URLs. Call this first to orient.',
     async () => {
       const { info } = ctx.session
+      const result: any = {
+        session_id: info.sessionId,
+        log_dir: info.logDir,
+        files: info.files,
+        channels_active: info.channels,
+        server_url: info.serverUrl,
+        mcp_url: info.mcpUrl,
+        target_url: info.targetUrl,
+        started_at: info.startedAt,
+        connected_clients: ctx.connectedClients,
+      }
+
+      // Include registered servers if registry is available (hybrid mode)
+      if (ctx.registry) {
+        const servers = ctx.registry.getAll()
+        if (servers.length > 0) {
+          result.mode = 'hybrid'
+          result.registered_servers = servers
+        } else {
+          result.mode = 'proxy'
+        }
+      }
+
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify({
-            session_id: info.sessionId,
-            log_dir: info.logDir,
-            files: info.files,
-            channels_active: info.channels,
-            server_url: info.serverUrl,
-            mcp_url: info.mcpUrl,
-            target_url: info.targetUrl,
-            started_at: info.startedAt,
-            connected_clients: ctx.connectedClients,
-          }, null, 2),
+          text: JSON.stringify(result, null, 2),
         }],
       }
     },
@@ -84,7 +115,8 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
       search: z.string().optional().describe('Text search across event payload (case-insensitive)'),
     },
     async (args) => {
-      const result = getDiagnostics(ctx.session.files, ctx.session, {
+      const logPaths = getLogPaths(ctx)
+      const result = getDiagnostics(logPaths, ctx.session, {
         since_checkpoint: args.since_checkpoint,
         since_ts: args.since_ts,
         limit: args.limit,
@@ -198,7 +230,8 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
       search: z.string().optional().describe('Text search (case-insensitive)'),
     },
     async (args) => {
-      const result = queryLogs(ctx.session.files, {
+      const logPaths = getLogPaths(ctx)
+      const result = queryLogs(logPaths, {
         channel: args.channel,
         sinceId: args.since_id,
         limit: args.limit,

@@ -12,7 +12,8 @@ export function computeSessionId(projectRoot: string): string {
 
 export function getLogDir(projectRoot: string, options: ViteLiveDevMcpOptions): string {
   if (options.logDir) return options.logDir
-  return join(tmpdir(), `vite-harness-${computeSessionId(projectRoot)}`)
+  // Default to project-relative .vite-mcp/ instead of /tmp to avoid permissions issues
+  return join(projectRoot, '.vite-mcp')
 }
 
 export interface SessionState {

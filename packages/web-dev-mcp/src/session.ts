@@ -12,7 +12,8 @@ export function computeSessionId(target: string): string {
 
 export function getLogDir(target: string, options: GatewayOptions): string {
   if (options.logDir) return options.logDir
-  return join(tmpdir(), `web-dev-mcp-${computeSessionId(target)}`)
+  // Default to .web-dev-mcp/ in current directory instead of /tmp to avoid permissions issues
+  return join(process.cwd(), '.web-dev-mcp')
 }
 
 export interface SessionState {

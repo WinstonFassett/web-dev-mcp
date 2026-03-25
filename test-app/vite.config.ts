@@ -7,6 +7,7 @@ export default defineConfig({
     react(),
     viteLiveDevMcp({
       network: true,
+      gateway: true,  // Register with gateway at http://localhost:3333
     }),
   ],
 })

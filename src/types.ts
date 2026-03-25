@@ -25,6 +25,7 @@ export interface ViteLiveDevMcpOptions {
         cursor?: boolean
         windsurf?: boolean
       }
+  gateway?: string | boolean  // Gateway URL (e.g. 'http://localhost:3333') or true for default
   notifications?: boolean
   printUrl?: boolean
 }
