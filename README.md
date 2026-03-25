@@ -1,15 +1,33 @@
 # vite-live-dev-mcp
 
-Vite plugin that gives AI coding agents live observability and browser control during development — console logs, HMR events, network requests, DOM queries, and JS evaluation — via NDJSON log files, an embedded MCP server, and bidirectional RPC.
+Vite plugin and universal gateway that give AI coding agents live observability and browser control during development — console logs, HMR events, network requests, DOM queries, and JS evaluation — via NDJSON log files, MCP servers, and bidirectional RPC.
+
+**Three deployment modes:**
+- **Standalone** — Vite plugin with embedded MCP server
+- **Proxy** — Universal gateway for Next.js, Remix, or any dev server
+- **Hybrid** — Multiple projects register with one persistent gateway
 
 ```mermaid
-graph LR
-    Agent[AI Agent] <-->|MCP| Vite[Vite Dev Server]
-    Vite <-->|RPC| Browser[Browser]
-    Browser -.- Features[console · errors · DOM<br/>eval · localStorage · network]
+graph TB
+    subgraph "Standalone Mode"
+        A1[AI Agent] <-->|MCP| V1[Vite + Plugin]
+        V1 <-->|RPC| B1[Browser]
+    end
+
+    subgraph "Hybrid Mode"
+        A2[AI Agent] <-->|MCP| GW[Gateway<br/>localhost:3333]
+        GW -.->|delegates| V2[Vite :5173]
+        GW -.->|delegates| N2[Next.js :3000]
+        V2 <-->|RPC| B2[Browser]
+        GW <-->|RPC| B3[Browser]
+    end
 ```
 
+See **[docs/architecture.md](docs/architecture.md)** for detailed diagrams and flows.
+
 ## Quick Start
+
+### Vite Plugin (Standalone)
 
 ```bash
 npm install -D vite-live-dev-mcp
@@ -26,13 +44,14 @@ export default defineConfig({
     react(),
     viteLiveDevMcp({
       network: true,   // opt-in: log fetch/XHR requests
+      gateway: true,   // opt-in: register with gateway for hybrid mode
       // react: true,   // opt-in: enable get_react_tree (requires bippy)
     }),
   ],
 })
 ```
 
-Or use the CLI wrapper (auto-injects the plugin, no config changes needed):
+Or use the CLI wrapper (auto-injects the plugin):
 
 ```bash
 npx vite-live-dev-mcp
@@ -44,17 +63,67 @@ On startup:
 ```
   ➜  vite-live-dev-mcp: http://localhost:5173/__mcp/sse
   ➜  CDP endpoint: http://localhost:5173/__cdp
-  ➜  log dir: /tmp/vite-harness-a3f9b2
+  ➜  log dir: /Users/you/project/.vite-mcp
+  ➜  registered with gateway: http://localhost:3333/__mcp/sse
 ```
 
-Add the MCP server to your `.mcp.json`:
+### Universal Gateway (Proxy Mode)
+
+For Next.js, Remix, or any framework without a Vite plugin:
+
+```bash
+npx web-dev-mcp --target http://localhost:3000 --port 3333
+```
+
+Or install globally:
+
+```bash
+npm install -g web-dev-mcp
+web-dev-mcp --target http://localhost:3000
+```
+
+The gateway proxies your app and injects observability. Access via `http://localhost:3333`.
+
+### Hybrid Mode (Multi-Project)
+
+Run the gateway once, have multiple projects register with it:
+
+```bash
+# Terminal 1: Start gateway
+web-dev-mcp --target http://localhost:3000 --port 3333
+
+# Terminal 2: Start Vite with gateway registration
+cd project-1 && npm run dev  # vite.config.ts has gateway: true
+
+# Terminal 3: Start another Vite project
+cd project-2 && npm run dev  # also registers with gateway
+```
+
+All projects share one MCP endpoint at `http://localhost:3333/__mcp/sse` — survives individual app restarts.
+
+### MCP Configuration
+
+Add to your `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
-    "my-app-vite-mcp": {
+    "vite-mcp": {
       "type": "sse",
       "url": "http://localhost:5173/__mcp/sse"
+    }
+  }
+}
+```
+
+Or for hybrid mode:
+
+```json
+{
+  "mcpServers": {
+    "web-dev-gateway": {
+      "type": "sse",
+      "url": "http://localhost:3333/__mcp/sse"
     }
   }
 }
@@ -70,7 +139,7 @@ Add the MCP server to your `.mcp.json`:
 | `get_diagnostics` | **Consolidated diagnostics** — console + errors + network logs + HMR status + auto-computed summary in a single call. Replaces 4-5 separate `get_logs()` calls. **2-3x faster** for agent test/fix loops. Supports `since_checkpoint` filtering. |
 | `get_hmr_status` | HMR update/error counts, pending state. Lightweight poll. |
 | `get_logs` | Query log files with cursor pagination, level filtering, text search. |
-| `clear_logs` | Truncate log files. Call before a fix iteration for a clean slate. Now sets a checkpoint timestamp for `get_diagnostics(since_checkpoint=true)`. |
+| `clear_logs` | Truncate log files. Call before a fix iteration for a clean slate. Sets checkpoint for `get_diagnostics(since_checkpoint=true)`. |
 | `get_react_tree` | React component tree snapshot (requires `react: true` + `bippy`). |
 
 ### Browser Control
@@ -82,21 +151,6 @@ Add the MCP server to your `.mcp.json`:
 | `wait_for_condition` | **Server-side polling** — blocks until browser condition (JS expression) is truthy or timeout. Eliminates manual polling loops. Default: 5s timeout, 100ms interval. |
 
 ## How It Works
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant Vite as Vite Dev Server
-    participant Agent as AI Agent
-
-    Browser->>Vite: console/errors/network (HMR WebSocket)
-    Vite->>Vite: write NDJSON logs
-
-    Agent->>Vite: MCP tool call
-    Vite->>Browser: capnweb RPC request
-    Browser->>Vite: result
-    Vite->>Agent: MCP response
-```
 
 Three communication channels:
 
@@ -268,15 +322,18 @@ const diag = await get_diagnostics({ since_checkpoint: true })
 
 ## Options
 
+### Vite Plugin Options
+
 ```ts
 viteLiveDevMcp({
   mcpPath: '/__mcp',            // MCP endpoint path (default: '/__mcp')
   network: false,                // log fetch/XHR (default: false)
   react: false,                  // enable get_react_tree (default: false)
+  gateway: false,                // register with gateway (default: false, or URL)
   networkOptions: {
     excludePatterns: ['/__', '/@', '/node_modules'],
   },
-  logDir: undefined,             // override tmp dir (default: /tmp/vite-harness-{hash})
+  logDir: undefined,             // override default (default: {projectRoot}/.vite-mcp)
   maxFileSizeMb: 10,             // per-channel rotation threshold
   autoRegister: false,           // write .mcp.json etc on startup (default: false)
   notifications: true,           // MCP notifications for errors (default: true)
@@ -284,7 +341,26 @@ viteLiveDevMcp({
 })
 ```
 
+### Gateway CLI Options
+
+```bash
+web-dev-mcp --target <url> [options]
+
+Options:
+  -t, --target <url>      Target dev server URL (required in proxy mode)
+  -p, --port <port>       Gateway port (default: 3333)
+  --host [host]           Bind to host (default: localhost)
+  --https                 Use HTTPS with self-signed cert
+  --cert <path>           Custom HTTPS cert path
+  --key <path>            Custom HTTPS key path
+  --network               Capture fetch/XHR requests
+  --react                 Enable React tree inspection (requires bippy)
+  --log-dir <path>        Override log directory
+```
+
 ## CLI
+
+### Vite Plugin CLI
 
 ```
 vite-live-dev-mcp [root] [options]
@@ -297,16 +373,21 @@ Options:
   -m, --mode <mode>       Vite mode
   --network               Capture fetch/XHR requests
   --react                 Enable React tree inspection
+  --gateway [url]         Register with gateway (default: http://localhost:3333)
   --no-auto-register      Skip writing MCP configs
   -h, --help              Show help
 ```
 
 The CLI auto-injects the plugin if it's not already in your vite config.
 
-## NDJSON Log Files
+## Log Files
+
+### Vite Plugin Logs
+
+Logs are stored in your project directory:
 
 ```
-/tmp/vite-harness-{hash}/
+{projectRoot}/.vite-mcp/
   session.json          ← session metadata
   console.ndjson        ← always active
   hmr.ndjson            ← always active
@@ -315,6 +396,21 @@ The CLI auto-injects the plugin if it's not already in your vite config.
   react.ndjson          ← opt-in (react: true)
 ```
 
+### Gateway Logs
+
+Gateway logs are stored where the gateway runs:
+
+```
+{cwd}/.web-dev-mcp/
+  session.json
+  console.ndjson
+  errors.ndjson
+  dev-events.ndjson
+  network.ndjson        ← opt-in (--network)
+```
+
+### Format
+
 One JSON object per line. `id` = line number = cursor position.
 
 ```json
@@ -322,7 +418,23 @@ One JSON object per line. `id` = line number = cursor position.
 {"id":2,"ts":1742654400456,"channel":"console","payload":{"level":"log","args":["counter: 5"]}}
 ```
 
-`{hash}` is derived from the project root path — stable across restarts. Files are truncated on each dev server start.
+Files are truncated on each dev server start. In hybrid mode, each registered server maintains its own logs.
+
+## Hybrid Mode Details
+
+When using `gateway: true` in your Vite config:
+
+1. **Registration**: Vite sends `POST /__gateway/register` with server metadata (type, port, PID, log paths)
+2. **Heartbeat**: Gateway checks registered servers every 5s, removes dead processes
+3. **Delegation**: MCP queries are routed to the appropriate registered server
+4. **Browser Association**: Browsers include `?server=vite-5173` in RPC connections for proper isolation
+5. **Persistence**: Gateway MCP endpoint survives individual app restarts
+
+Query gateway status:
+```bash
+curl http://localhost:3333/__status
+curl http://localhost:3333/__gateway/servers
+```
 
 ## React Tree (opt-in)
 
@@ -334,11 +446,26 @@ npm install -D bippy
 viteLiveDevMcp({ react: true })
 ```
 
+The `get_react_tree` MCP tool returns component names, props, and state.
+
 ## Requirements
 
-- Vite 6+
-- Node 20.19+
-- React 17–19 (for `react: true` with bippy)
+- **Vite Plugin**: Vite 6+, Node 20.19+
+- **Gateway**: Node 20.19+
+- **React Tree**: React 17–19 with bippy
+
+## Packages
+
+- `vite-live-dev-mcp` — Vite plugin (this package)
+- `web-dev-mcp` — Universal gateway in `packages/web-dev-mcp/`
+
+## Architecture
+
+See **[docs/architecture.md](docs/architecture.md)** for:
+- Detailed Mermaid diagrams of all three modes
+- Registration and browser connection flows
+- MCP query routing in hybrid mode
+- File structure and API endpoints
 
 ## License
 

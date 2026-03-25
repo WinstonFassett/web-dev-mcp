@@ -56,7 +56,7 @@ Plugin injects `virtual:vite-harness-client` into app entry points by intercepti
 All client code is in [src/client/](src/client/) and loaded as virtual modules (`\0virtual:*` in Vite's module graph).
 
 ### Log Files
-On dev server start, creates `/tmp/vite-harness-{hash}/`:
+On dev server start, creates `.vite-mcp/` in the project root:
 - `session.json` - Session metadata (file paths, server URL, MCP URL)
 - `console.ndjson` - Console logs
 - `hmr.ndjson` - HMR updates/errors
@@ -154,7 +154,7 @@ Writers listen to `server.hot.on('harness:*')` events from browser.
 1. Build plugin: `npm run build` (or `npm run dev` for watch mode)
 2. Start test-app: `cd test-app && npm run dev`
 3. Open browser to test-app URL (printed in console)
-4. Check logs: `ls -la /tmp/vite-harness-*` and `tail -f /tmp/vite-harness-*/console.ndjson`
+4. Check logs: `ls -la test-app/.vite-mcp/` and `tail -f test-app/.vite-mcp/console.ndjson`
 5. Test MCP tools via Claude Code or direct HTTP:
    ```bash
    curl http://test-app.localhost/__mcp/sse
@@ -206,5 +206,5 @@ This avoids bundling client code into the plugin - keeps it hot-reloadable durin
 - After changing plugin code, must run `npm run build` for test-app to pick up changes (unless using `npm run dev` watch mode)
 - If MCP tools return "no browser connected", open test-app in browser first (RPC requires active connection)
 - If HMR not firing, check `server.forwardConsole` isn't being overridden elsewhere in config
-- If logs empty, check `/tmp/vite-harness-*/session.json` exists (session may not have initialized)
+- If logs empty, check `.vite-mcp/session.json` exists (session may not have initialized)
 - CDP requires browser to be open before Playwright connects (`/__cdp/json` returns empty array if no pages)
