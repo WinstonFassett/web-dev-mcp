@@ -18,6 +18,7 @@ import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './m
 import { setupRpcWebSocket } from './rpc-server.js'
 import { createCdpMiddleware, setupCdpWebSocket, type CdpContext } from './cdp-server.js'
 import { autoRegister } from './auto-register.js'
+import { ServerRegistry, type RegisteredServer } from './registry.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -73,6 +74,17 @@ export async function startGateway(options: GatewayOptions) {
     console.error('[web-dev-mcp] Could not load client.js bundle. Run `npm run build` first.')
     process.exit(1)
   }
+
+  // Create server registry for hybrid architecture
+  const registry = new ServerRegistry()
+
+  // Start heartbeat to clean up dead servers
+  const heartbeatInterval = setInterval(() => {
+    const removed = registry.cleanupDeadServers()
+    if (removed > 0) {
+      console.log(`[registry] Cleaned up ${removed} dead server(s)`)
+    }
+  }, 5000)
 
   // Create HTTP proxy — always selfHandleResponse so we control piping
   const proxy = httpProxy.createProxyServer({
@@ -198,6 +210,74 @@ export async function startGateway(options: GatewayOptions) {
       return
     }
 
+    // Gateway registration endpoints
+    if (url === '/__gateway/register' && req.method === 'POST') {
+      addCorsHeaders(res)
+      let body = ''
+      req.on('data', chunk => { body += chunk.toString() })
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body) as Partial<RegisteredServer>
+
+          if (!data.type || !data.port || !data.pid) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Missing required fields: type, port, pid' }))
+            return
+          }
+
+          const server: RegisteredServer = {
+            id: `${data.type}-${data.port}`,
+            type: data.type as RegisteredServer['type'],
+            port: data.port,
+            pid: data.pid,
+            name: data.name,
+            rpcEndpoint: data.rpcEndpoint,
+            mcpEndpoint: data.mcpEndpoint,
+            logPaths: data.logPaths,
+            registeredAt: Date.now(),
+          }
+
+          registry.add(server)
+
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            success: true,
+            gatewayMcpUrl: `${serverUrl}${mcpPath}/sse`,
+            gatewayRpcUrl: `${serverUrl.replace('http', 'ws')}/__rpc`,
+            serverId: server.id,
+          }))
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: `Invalid request: ${err}` }))
+        }
+      })
+      return
+    }
+
+    if (url === '/__gateway/servers' && req.method === 'GET') {
+      addCorsHeaders(res)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        servers: registry.getAll(),
+        count: registry.size(),
+      }, null, 2))
+      return
+    }
+
+    if (url.startsWith('/__gateway/unregister/') && req.method === 'POST') {
+      addCorsHeaders(res)
+      const serverId = url.split('/').pop()
+      if (serverId && registry.has(serverId)) {
+        registry.remove(serverId)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ success: true }))
+      } else {
+        res.writeHead(404, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Server not found' }))
+      }
+      return
+    }
+
     // MCP endpoints
     if (url.startsWith(mcpPath)) {
       addCorsHeaders(res)
@@ -223,8 +303,10 @@ export async function startGateway(options: GatewayOptions) {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         gateway: 'web-dev-mcp',
+        mode: registry.size() > 0 ? 'hybrid' : 'proxy',
         target,
         session: session.info,
+        registered_servers: registry.getAll(),
         uptime_ms: Date.now() - session.startedAt,
       }, null, 2))
       return
