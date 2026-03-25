@@ -1,3 +1,5 @@
+*.local
+*.local.json
 node_modules/
 dist/
 .next/
