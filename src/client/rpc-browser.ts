@@ -6,6 +6,13 @@
 import { RpcTarget, newWebSocketRpcSession } from 'capnweb'
 import chobitsu from 'chobitsu'
 
+// Global variables injected by gateway
+declare global {
+  interface Window {
+    __WEB_DEV_MCP_SERVER__?: string
+  }
+}
+
 // Generate or retrieve sticky browser ID
 const BROWSER_ID_KEY = '__vite_live_dev_mcp_browser_id__'
 function getBrowserId() {
@@ -249,7 +256,13 @@ class BrowserApi extends RpcTarget {
 
 // Connect to the RPC WebSocket
 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-const rpcUrl = protocol + '//' + window.location.host + '/__rpc'
+let rpcUrl = protocol + '//' + window.location.host + '/__rpc'
+
+// If connected through gateway in hybrid mode, pass server ID
+if (window.__WEB_DEV_MCP_SERVER__) {
+  rpcUrl += '?server=' + encodeURIComponent(window.__WEB_DEV_MCP_SERVER__)
+}
+
 const browserApi = new BrowserApi()
 
 try {

@@ -135,11 +135,20 @@ export async function startGateway(options: GatewayOptions) {
 
       let html = buffer.toString('utf-8')
 
-      // Build injection: optional react flag + client script
+      // Build injection: optional flags + client script
       let injection = ''
       if (options.react) {
         injection += `<script>window.__WEB_DEV_MCP_REACT__=true</script>`
       }
+
+      // In hybrid mode, tell client which server it belongs to
+      if (registry.size() > 0) {
+        const latestServer = registry.getLatest()
+        if (latestServer) {
+          injection += `<script>window.__WEB_DEV_MCP_SERVER__='${latestServer.id}'</script>`
+        }
+      }
+
       injection += `<script src="/__client.js"></script>`
 
       if (html.includes('</head>')) {

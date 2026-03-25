@@ -424,7 +424,13 @@
       }
 
       // Connect RPC to gateway (may be cross-origin)
-      const rpcUrl = gatewayWsProtocol + '//' + gatewayHost + '/__rpc'
+      let rpcUrl = gatewayWsProtocol + '//' + gatewayHost + '/__rpc'
+
+      // In hybrid mode, pass server ID so gateway knows which project this browser belongs to
+      if ((window as any).__WEB_DEV_MCP_SERVER__) {
+        rpcUrl += '?server=' + encodeURIComponent((window as any).__WEB_DEV_MCP_SERVER__)
+      }
+
       const browserApi = new BrowserApi()
 
       try {

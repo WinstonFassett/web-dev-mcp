@@ -75,6 +75,7 @@ export interface BrowserStub {
 interface BrowserConnection {
   stub: RpcStub<BrowserStub>
   browserId: string | null
+  serverId: string | null  // Which registered server this browser belongs to
   connectedAt: number
 }
 
@@ -104,10 +105,33 @@ export function getBrowserById(browserId: string): RpcStub<BrowserStub> | undefi
   return undefined
 }
 
-export function getAllBrowsers(): Array<{ connId: string; browserId: string | null; connectedAt: number }> {
+export function getBrowsersByServer(serverId: string): RpcStub<BrowserStub>[] {
+  const stubs: RpcStub<BrowserStub>[] = []
+  for (const conn of browsers.values()) {
+    if (conn.serverId === serverId) {
+      stubs.push(conn.stub)
+    }
+  }
+  return stubs
+}
+
+export function getLatestBrowserByServer(serverId: string): RpcStub<BrowserStub> | undefined {
+  // Return latest connected browser for given server
+  for (let i = connectionOrder.length - 1; i >= 0; i--) {
+    const connId = connectionOrder[i]
+    const conn = browsers.get(connId)
+    if (conn && conn.serverId === serverId) {
+      return conn.stub
+    }
+  }
+  return undefined
+}
+
+export function getAllBrowsers(): Array<{ connId: string; browserId: string | null; serverId: string | null; connectedAt: number }> {
   return Array.from(browsers.entries()).map(([connId, conn]) => ({
     connId,
     browserId: conn.browserId,
+    serverId: conn.serverId,
     connectedAt: conn.connectedAt,
   }))
 }
@@ -151,9 +175,17 @@ export function setupRpcWebSocket(httpServer: { on(event: string, listener: (...
     }
   })
 
-  wss.on('connection', async (ws) => {
+  wss.on('connection', async (ws, request: any) => {
     const connId = Math.random().toString(36).slice(2)
     const transport = createWsTransport(ws)
+
+    // Parse server ID from query parameter (for hybrid mode)
+    let serverId: string | null = null
+    const url = request.url ?? ''
+    const match = url.match(/[?&]server=([^&]+)/)
+    if (match) {
+      serverId = decodeURIComponent(match[1])
+    }
 
     const session = new RpcSession<BrowserStub>(transport)
     const stub = session.getRemoteMain()
@@ -161,6 +193,7 @@ export function setupRpcWebSocket(httpServer: { on(event: string, listener: (...
     const conn: BrowserConnection = {
       stub,
       browserId: null,
+      serverId,
       connectedAt: Date.now(),
     }
 
@@ -173,7 +206,8 @@ export function setupRpcWebSocket(httpServer: { on(event: string, listener: (...
       // Browser may not support id property yet
     }
 
-    console.log(`[web-dev-mcp] Browser connected (${connId})`)
+    const serverInfo = serverId ? ` for server ${serverId}` : ''
+    console.log(`[web-dev-mcp] Browser connected (${connId})${serverInfo}`)
 
     ws.on('close', () => {
       browsers.delete(connId)
