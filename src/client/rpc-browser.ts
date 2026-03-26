@@ -7,11 +7,8 @@ import { RpcTarget, newWebSocketRpcSession } from 'capnweb'
 import chobitsu from 'chobitsu'
 
 // Global variables injected by gateway
-declare global {
-  interface Window {
-    __WEB_DEV_MCP_SERVER__?: string
-  }
-}
+// @ts-ignore — window.__WEB_DEV_MCP_SERVER__ set by gateway
+// @ts-ignore — window.__html2canvas lazy-loaded for screenshots
 
 // Generate or retrieve sticky browser ID
 const BROWSER_ID_KEY = '__vite_live_dev_mcp_browser_id__'
@@ -179,6 +176,120 @@ class BrowserApi extends RpcTarget {
   get window() { return new AnyTarget(window) }
   get localStorage() { return new AnyTarget(localStorage) }
   get sessionStorage() { return new AnyTarget(sessionStorage) }
+
+  // --- Browser interaction methods ---
+
+  async screenshot(selector) {
+    const target = selector ? document.querySelector(selector) : document.documentElement
+    if (!target) return { error: 'Element not found: ' + selector }
+
+    // Lazy-load html2canvas from CDN on first use
+    if (!window.__html2canvas) {
+      try {
+        const mod = await import(/* @vite-ignore */ 'https://esm.sh/html2canvas@1.4.1')
+        window.__html2canvas = mod.default || mod
+      } catch (err) {
+        return { error: 'Failed to load html2canvas: ' + err.message }
+      }
+    }
+
+    try {
+      const canvas = await window.__html2canvas(target, {
+        useCORS: true,
+        logging: false,
+        scale: window.devicePixelRatio || 1,
+      })
+      return {
+        data: canvas.toDataURL('image/png'),
+        width: canvas.width,
+        height: canvas.height,
+      }
+    } catch (err) {
+      return { error: 'Screenshot failed: ' + err.message }
+    }
+  }
+
+  click(selector) {
+    const el = document.querySelector(selector)
+    if (!el) return { error: 'Element not found: ' + selector }
+    el.click()
+    return { clicked: selector, tag: el.tagName.toLowerCase() }
+  }
+
+  fill(selector, value) {
+    const el = document.querySelector(selector)
+    if (!el) return { error: 'Element not found: ' + selector }
+    // Use native setter to trigger React's synthetic event system
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype, 'value'
+    )?.set || Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype, 'value'
+    )?.set
+    if (nativeInputValueSetter) {
+      nativeInputValueSetter.call(el, value)
+    } else {
+      el.value = value
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+    return { filled: selector, value }
+  }
+
+  selectOption(selector, value) {
+    const el = document.querySelector(selector)
+    if (!el || el.tagName !== 'SELECT') return { error: 'Select element not found: ' + selector }
+    // Find option by value or text
+    const options = Array.from(el.options)
+    const option = options.find(o => o.value === value) || options.find(o => o.textContent.trim() === value)
+    if (!option) return { error: 'Option not found: ' + value }
+    el.value = option.value
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+    return { selected: selector, value: option.value, text: option.textContent.trim() }
+  }
+
+  hover(selector) {
+    const el = document.querySelector(selector)
+    if (!el) return { error: 'Element not found: ' + selector }
+    el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+    el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    return { hovered: selector }
+  }
+
+  pressKey(key, modifiers, selector) {
+    const target = selector ? document.querySelector(selector) : document.activeElement || document.body
+    if (selector && !target) return { error: 'Element not found: ' + selector }
+    const opts = {
+      key,
+      code: key.length === 1 ? 'Key' + key.toUpperCase() : key,
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: modifiers?.ctrl || false,
+      shiftKey: modifiers?.shift || false,
+      altKey: modifiers?.alt || false,
+      metaKey: modifiers?.meta || false,
+    }
+    target.dispatchEvent(new KeyboardEvent('keydown', opts))
+    target.dispatchEvent(new KeyboardEvent('keypress', opts))
+    target.dispatchEvent(new KeyboardEvent('keyup', opts))
+    return { key, target: selector || 'activeElement' }
+  }
+
+  scroll(selector, x, y) {
+    if (selector) {
+      const el = document.querySelector(selector)
+      if (!el) return { error: 'Element not found: ' + selector }
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return { scrolledTo: selector }
+    }
+    window.scrollTo({ left: x || 0, top: y || 0, behavior: 'smooth' })
+    return { scrolledTo: { x: x || 0, y: y || 0 } }
+  }
+
+  getVisibleText(selector) {
+    const el = selector ? document.querySelector(selector) : document.body
+    if (!el) return { error: 'Element not found: ' + selector }
+    return { text: el.innerText, length: el.innerText.length }
+  }
 
   // Keep eval for backward compat — serializes result to string
   eval(expression) {
