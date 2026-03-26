@@ -10,20 +10,24 @@
   },
   "exports": {
     ".": {
+      "types": "./dist/gateway.d.ts",
       "import": "./dist/gateway.js",
-      "types": "./dist/gateway.d.ts"
+      "default": "./dist/gateway.js"
     },
     "./vite": {
+      "types": "./dist/adapters/vite.d.ts",
       "import": "./dist/adapters/vite.js",
-      "types": "./dist/adapters/vite.d.ts"
+      "default": "./dist/adapters/vite.js"
     },
     "./nextjs": {
+      "types": "./dist/nextjs/index.d.ts",
       "import": "./dist/nextjs/index.js",
-      "types": "./dist/nextjs/index.d.ts"
+      "default": "./dist/nextjs/index.js"
     },
     "./nextjs/instrument": {
+      "types": "./dist/nextjs/instrument.d.ts",
       "import": "./dist/nextjs/instrument.js",
-      "types": "./dist/nextjs/instrument.d.ts"
+      "default": "./dist/nextjs/instrument.js"
     }
   },
   "files": [
