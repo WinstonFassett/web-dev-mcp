@@ -28,7 +28,7 @@ const _packageDir = dirname(fileURLToPath(import.meta.url))
 
 function getClientShimSource(): string {
   if (!_clientShimSource) {
-    const shimPath = join(_packageDir, '..', 'src', 'client', 'harness-client.ts')
+    const shimPath = join(_packageDir, '..', 'client', 'harness-client.ts')
     _clientShimSource = readFileSync(shimPath, 'utf-8')
   }
   return _clientShimSource
@@ -36,7 +36,7 @@ function getClientShimSource(): string {
 
 function getReactAdapterSource(): string {
   if (!_reactAdapterSource) {
-    const adapterPath = join(_packageDir, '..', 'src', 'client', 'react-adapter.ts')
+    const adapterPath = join(_packageDir, '..', 'client', 'react-adapter.ts')
     _reactAdapterSource = readFileSync(adapterPath, 'utf-8')
   }
   return _reactAdapterSource
@@ -44,7 +44,7 @@ function getReactAdapterSource(): string {
 
 function getRpcBrowserSource(): string {
   if (!_rpcBrowserSource) {
-    const rpcPath = join(_packageDir, '..', 'src', 'client', 'rpc-browser.ts')
+    const rpcPath = join(_packageDir, '..', 'client', 'rpc-browser.ts')
     _rpcBrowserSource = readFileSync(rpcPath, 'utf-8')
   }
   return _rpcBrowserSource

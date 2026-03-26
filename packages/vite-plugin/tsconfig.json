@@ -4,15 +4,17 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
     "outDir": "dist",
+    "rootDir": ".",
     "strict": false,
     "noImplicitAny": false,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "types": ["vite/client"],
     "noEmitOnError": false
   },
   "include": ["."],
-  "exclude": ["dist", "node_modules"]
+  "exclude": ["dist", "node_modules", "client"]
 }
