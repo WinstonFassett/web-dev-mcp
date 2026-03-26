@@ -86,87 +86,92 @@ export async function startGateway(options: GatewayOptions) {
     }
   }, 5000)
 
-  // Create HTTP proxy — always selfHandleResponse so we control piping
-  const proxy = httpProxy.createProxyServer({
-    target,
-    changeOrigin: true,
-    selfHandleResponse: true,
-  })
+  // Create HTTP proxy only when target is provided (proxy mode)
+  let proxy: ReturnType<typeof httpProxy.createProxyServer> | null = null
 
-  proxy.on('error', (err, _req, res) => {
-    console.error(`[web-dev-mcp] Proxy error: ${err.message}`)
-    if (res && 'writeHead' in res && !res.headersSent) {
-      (res as http.ServerResponse).writeHead(502, { 'Content-Type': 'text/plain' })
-      ;(res as http.ServerResponse).end(`Gateway error: ${err.message}\nIs your dev server running at ${target}?`)
-    }
-  })
-
-  // Handle ALL proxy responses — inject script into HTML, pass through everything else
-  proxy.on('proxyRes', (proxyRes, _req, res) => {
-    const contentType = proxyRes.headers['content-type'] ?? ''
-    const isHtml = contentType.includes('text/html')
-
-    if (!isHtml) {
-      (res as http.ServerResponse).writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
-      proxyRes.pipe(res as http.ServerResponse)
-      return
-    }
-
-    // Buffer HTML to inject client script
-    const chunks: Buffer[] = []
-    const contentEncoding = proxyRes.headers['content-encoding']
-
-    proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk))
-    proxyRes.on('end', () => {
-      let buffer = Buffer.concat(chunks)
-
-      // Decompress if gzipped
-      if (contentEncoding === 'gzip') {
-        try {
-          buffer = gunzipSync(buffer)
-        } catch (err) {
-          console.error('[web-dev-mcp] Failed to decompress gzip:', err)
-          // Send as-is if decompression fails
-          ;(res as http.ServerResponse).writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
-          ;(res as http.ServerResponse).end(buffer)
-          return
-        }
-      }
-
-      let html = buffer.toString('utf-8')
-
-      // Build injection: optional flags + client script
-      let injection = ''
-      if (options.react) {
-        injection += `<script>window.__WEB_DEV_MCP_REACT__=true</script>`
-      }
-
-      // In hybrid mode, tell client which server it belongs to
-      if (registry.size() > 0) {
-        const latestServer = registry.getLatest()
-        if (latestServer) {
-          injection += `<script>window.__WEB_DEV_MCP_SERVER__='${latestServer.id}'</script>`
-        }
-      }
-
-      injection += `<script src="/__client.js"></script>`
-
-      if (html.includes('</head>')) {
-        html = html.replace('</head>', injection + '</head>')
-      } else if (html.includes('</body>')) {
-        html = html.replace('</body>', injection + '</body>')
-      } else {
-        html += injection
-      }
-
-      const headers = { ...proxyRes.headers }
-      delete headers['content-length']
-      delete headers['content-encoding']
-
-      ;(res as http.ServerResponse).writeHead(proxyRes.statusCode ?? 200, headers)
-      ;(res as http.ServerResponse).end(html)
+  if (target) {
+    const p = httpProxy.createProxyServer({
+      target,
+      changeOrigin: true,
+      selfHandleResponse: true,
     })
-  })
+    proxy = p
+
+    p.on('error', (err, _req, res) => {
+      console.error(`[web-dev-mcp] Proxy error: ${err.message}`)
+      if (res && 'writeHead' in res && !res.headersSent) {
+        (res as http.ServerResponse).writeHead(502, { 'Content-Type': 'text/plain' })
+        ;(res as http.ServerResponse).end(`Gateway error: ${err.message}\nIs your dev server running at ${target}?`)
+      }
+    })
+
+    // Handle ALL proxy responses — inject script into HTML, pass through everything else
+    p.on('proxyRes', (proxyRes, _req, res) => {
+      const contentType = proxyRes.headers['content-type'] ?? ''
+      const isHtml = contentType.includes('text/html')
+
+      if (!isHtml) {
+        (res as http.ServerResponse).writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
+        proxyRes.pipe(res as http.ServerResponse)
+        return
+      }
+
+      // Buffer HTML to inject client script
+      const chunks: Buffer[] = []
+      const contentEncoding = proxyRes.headers['content-encoding']
+
+      proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk))
+      proxyRes.on('end', () => {
+        let buffer = Buffer.concat(chunks)
+
+        // Decompress if gzipped
+        if (contentEncoding === 'gzip') {
+          try {
+            buffer = gunzipSync(buffer)
+          } catch (err) {
+            console.error('[web-dev-mcp] Failed to decompress gzip:', err)
+            // Send as-is if decompression fails
+            ;(res as http.ServerResponse).writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
+            ;(res as http.ServerResponse).end(buffer)
+            return
+          }
+        }
+
+        let html = buffer.toString('utf-8')
+
+        // Build injection: optional flags + client script
+        let injection = ''
+        if (options.react) {
+          injection += `<script>window.__WEB_DEV_MCP_REACT__=true</script>`
+        }
+
+        // In hybrid mode, tell client which server it belongs to
+        if (registry.size() > 0) {
+          const latestServer = registry.getLatest()
+          if (latestServer) {
+            injection += `<script>window.__WEB_DEV_MCP_SERVER__='${latestServer.id}'</script>`
+          }
+        }
+
+        injection += `<script src="/__client.js"></script>`
+
+        if (html.includes('</head>')) {
+          html = html.replace('</head>', injection + '</head>')
+        } else if (html.includes('</body>')) {
+          html = html.replace('</body>', injection + '</body>')
+        } else {
+          html += injection
+        }
+
+        const headers = { ...proxyRes.headers }
+        delete headers['content-length']
+        delete headers['content-encoding']
+
+        ;(res as http.ServerResponse).writeHead(proxyRes.statusCode ?? 200, headers)
+        ;(res as http.ServerResponse).end(html)
+      })
+    })
+  }
 
   // Initialize session
   const protocol = useHttps ? 'https' : 'http'
@@ -313,8 +318,8 @@ export async function startGateway(options: GatewayOptions) {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         gateway: 'web-dev-mcp',
-        mode: registry.size() > 0 ? 'hybrid' : 'proxy',
-        target,
+        mode: target ? (registry.size() > 0 ? 'hybrid' : 'proxy') : 'hub',
+        target: target ?? null,
         session: session.info,
         registered_servers: registry.getAll(),
         uptime_ms: Date.now() - session.startedAt,
@@ -322,8 +327,13 @@ export async function startGateway(options: GatewayOptions) {
       return
     }
 
-    // Proxy everything else
-    proxy.web(req, res)
+    // Proxy everything else to target (if in proxy mode)
+    if (proxy) {
+      proxy.web(req, res)
+    } else {
+      res.writeHead(404, { 'Content-Type': 'text/plain' })
+      res.end('Not found (gateway running in hub mode — no proxy target)')
+    }
   }
 
   // Create server (HTTP or HTTPS)
@@ -371,9 +381,11 @@ export async function startGateway(options: GatewayOptions) {
       // Handled by setupRpcWebSocket's own upgrade listener
     } else if (url.startsWith('/__cdp/devtools/')) {
       // Handled by setupCdpWebSocket's own upgrade listener
-    } else {
+    } else if (proxy) {
       // Proxy WebSocket to target
       proxy.ws(request, socket, head)
+    } else {
+      socket.destroy()
     }
   })
 
@@ -432,8 +444,12 @@ export async function startGateway(options: GatewayOptions) {
     console.log('')
     console.log(`  web-dev-mcp gateway`)
     console.log(`  ───────────────────────────────`)
-    console.log(`  Proxy:   ${proto}://localhost:${port}`)
-    console.log(`  Target:  ${target}`)
+    console.log(`  Listen:  ${proto}://localhost:${port}`)
+    if (target) {
+      console.log(`  Mode:    proxy → ${target}`)
+    } else {
+      console.log(`  Mode:    hub (no proxy target)`)
+    }
     console.log(`  MCP:     ${proto}://localhost:${port}${mcpPath}/sse`)
     console.log(`  CDP:     ${proto}://localhost:${port}/__cdp`)
     console.log(`  Logs:    ${session.logDir}`)

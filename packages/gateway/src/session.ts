@@ -30,7 +30,7 @@ export function initSession(
   serverUrl: string,
   mcpPath: string,
 ): SessionState {
-  const target = options.target
+  const target = options.target ?? serverUrl
   const sessionId = computeSessionId(target)
   const logDir = getLogDir(target, options)
   const mcpUrl = `${serverUrl}${mcpPath}/sse`
@@ -57,7 +57,7 @@ export function initSession(
     channels,
     serverUrl,
     mcpUrl,
-    targetUrl: target,
+    targetUrl: options.target ?? null,
     startedAt: Date.now(),
   }
 

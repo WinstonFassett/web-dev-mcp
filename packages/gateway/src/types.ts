@@ -1,5 +1,5 @@
 export interface GatewayOptions {
-  target: string
+  target?: string
   port?: number
   network?: boolean
   react?: boolean
@@ -47,7 +47,7 @@ export interface SessionInfo {
   channels: string[]
   serverUrl: string
   mcpUrl: string
-  targetUrl: string
+  targetUrl: string | null
   startedAt: number
 }
 

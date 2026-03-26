@@ -43,11 +43,12 @@ if (opts.help) {
   web-dev-mcp — Universal web development MCP gateway
 
   Usage:
-    npx web-dev-mcp --target http://localhost:3000
-    npx web-dev-mcp -t http://localhost:3000 -p 8080 --network --react
+    npx web-dev-mcp                                        # hub mode (no proxy)
+    npx web-dev-mcp --target http://localhost:3000          # proxy mode
+    npx web-dev-mcp -t http://localhost:3000 -p 8080 --network
 
   Options:
-    --target, -t <url>   Dev server URL to proxy (required)
+    --target, -t <url>   Dev server URL to proxy (omit for hub mode)
     --port, -p <port>    Gateway port (default: 3333)
     --network            Capture fetch/XHR requests
     --react              Enable React DevTools (bippy) integration
@@ -60,15 +61,9 @@ if (opts.help) {
   process.exit(0)
 }
 
-if (!opts.target) {
-  console.error('Error: --target is required')
-  console.error('Usage: npx web-dev-mcp --target http://localhost:3000')
-  process.exit(1)
-}
-
-// Normalize target URL
+// Normalize target URL if provided
 let target = opts.target
-if (!target.startsWith('http')) {
+if (target && !target.startsWith('http')) {
   target = 'http://' + target
 }
 
