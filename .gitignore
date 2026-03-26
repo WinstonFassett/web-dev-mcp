@@ -1,5 +1,6 @@
 *.local
 *.local.json
+*.tgz
 node_modules/
 dist/
 .next/
