@@ -342,6 +342,7 @@ export async function startGateway(options: GatewayOptions) {
         target: targetUrl.origin,
         changeOrigin: true,
         selfHandleResponse: true,
+        secure: false,
       })
       dynamicProxy.on('error', (err) => {
         if (!res.headersSent) {
