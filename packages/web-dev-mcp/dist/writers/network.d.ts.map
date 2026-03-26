@@ -1,1 +1,0 @@
-{"version":3,"file":"network.d.ts","sourceRoot":"","sources":["../../src/writers/network.ts"],"names":[],"mappings":"AACA,OAAO,KAAK,EAAE,cAAc,EAAE,MAAM,aAAa,CAAA;AAEjD,qBAAa,aAAa;IACxB,OAAO,CAAC,MAAM,CAAsB;gBAExB,QAAQ,EAAE,MAAM,EAAE,aAAa,CAAC,EAAE,MAAM;IAIpD,KAAK,CAAC,OAAO,EAAE,cAAc;IAI7B,OAAO;IAIP,OAAO;CAGR"}
