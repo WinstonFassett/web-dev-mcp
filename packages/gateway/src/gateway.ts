@@ -367,8 +367,11 @@ export async function startGateway(options: GatewayOptions) {
             try { buffer = gunzipSync(buffer) } catch { res.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers); res.end(buffer); return }
           }
           let html = buffer.toString('utf-8')
-          const injection = `<script src="/__client.js"></script>`
+          // <base> makes relative URLs route back through the proxy
+          const basePath = '/' + targetUrl.origin + targetUrl.pathname.replace(/\/[^/]*$/, '/')
+          const injection = `<base href="${basePath}"><script src="/__client.js"></script>`
           if (html.includes('</head>')) html = html.replace('</head>', injection + '</head>')
+          else if (html.includes('<head>')) html = html.replace('<head>', '<head>' + injection)
           else if (html.includes('</body>')) html = html.replace('</body>', injection + '</body>')
           else html += injection
           const headers = { ...proxyRes.headers }
