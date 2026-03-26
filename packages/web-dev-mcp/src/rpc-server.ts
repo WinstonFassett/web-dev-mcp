@@ -64,6 +64,16 @@ export interface BrowserStub {
   cdpConnect(callback: RpcTarget): Promise<boolean>
   cdpSend(message: string): Promise<void>
   cdpDisconnect(): Promise<void>
+  // Browser interaction
+  screenshot(selector?: string): Promise<{ data: string; width: number; height: number } | { error: string }>
+  click(selector: string): Promise<{ clicked: string; tag: string } | { error: string }>
+  fill(selector: string, value: string): Promise<{ filled: string; value: string } | { error: string }>
+  selectOption(selector: string, value: string): Promise<{ selected: string; value: string; text: string } | { error: string }>
+  hover(selector: string): Promise<{ hovered: string } | { error: string }>
+  pressKey(key: string, modifiers?: { ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean }, selector?: string): Promise<{ key: string; target: string } | { error: string }>
+  scroll(selector?: string, x?: number, y?: number): Promise<{ scrolledTo: string | { x: number; y: number } } | { error: string }>
+  getVisibleText(selector?: string): Promise<{ text: string; length: number } | { error: string }>
+
   eval(expression: string): Promise<string>
   queryDom(selector: string, options: {
     max_depth?: number

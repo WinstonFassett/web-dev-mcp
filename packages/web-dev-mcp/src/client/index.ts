@@ -421,6 +421,117 @@
           if (reactTreeGetter) return reactTreeGetter(opts)
           return { error: 'React DevTools not enabled. Start gateway with --react flag.' }
         }
+
+        // --- Browser interaction methods ---
+
+        async screenshot(selector?: string) {
+          const target = selector ? document.querySelector(selector) : document.documentElement
+          if (!target) return { error: 'Element not found: ' + selector }
+
+          if (!(window as any).__html2canvas) {
+            try {
+              const mod = await import(/* @vite-ignore */ 'https://esm.sh/html2canvas@1.4.1')
+              ;(window as any).__html2canvas = mod.default || mod
+            } catch (err: any) {
+              return { error: 'Failed to load html2canvas: ' + err.message }
+            }
+          }
+
+          try {
+            const canvas = await (window as any).__html2canvas(target, {
+              useCORS: true,
+              logging: false,
+              scale: window.devicePixelRatio || 1,
+            })
+            return {
+              data: canvas.toDataURL('image/png'),
+              width: canvas.width,
+              height: canvas.height,
+            }
+          } catch (err: any) {
+            return { error: 'Screenshot failed: ' + err.message }
+          }
+        }
+
+        click(selector: string) {
+          const el = document.querySelector(selector) as HTMLElement | null
+          if (!el) return { error: 'Element not found: ' + selector }
+          el.click()
+          return { clicked: selector, tag: el.tagName.toLowerCase() }
+        }
+
+        fill(selector: string, value: string) {
+          const el = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement | null
+          if (!el) return { error: 'Element not found: ' + selector }
+          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+            HTMLInputElement.prototype, 'value'
+          )?.set || Object.getOwnPropertyDescriptor(
+            HTMLTextAreaElement.prototype, 'value'
+          )?.set
+          if (nativeInputValueSetter) {
+            nativeInputValueSetter.call(el, value)
+          } else {
+            el.value = value
+          }
+          el.dispatchEvent(new Event('input', { bubbles: true }))
+          el.dispatchEvent(new Event('change', { bubbles: true }))
+          return { filled: selector, value }
+        }
+
+        selectOption(selector: string, value: string) {
+          const el = document.querySelector(selector) as HTMLSelectElement | null
+          if (!el || el.tagName !== 'SELECT') return { error: 'Select element not found: ' + selector }
+          const options = Array.from(el.options)
+          const option = options.find(o => o.value === value) || options.find(o => o.textContent?.trim() === value)
+          if (!option) return { error: 'Option not found: ' + value }
+          el.value = option.value
+          el.dispatchEvent(new Event('change', { bubbles: true }))
+          return { selected: selector, value: option.value, text: option.textContent?.trim() || '' }
+        }
+
+        hover(selector: string) {
+          const el = document.querySelector(selector)
+          if (!el) return { error: 'Element not found: ' + selector }
+          el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+          el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+          return { hovered: selector }
+        }
+
+        pressKey(key: string, modifiers?: { ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean }, selector?: string) {
+          const target = selector ? document.querySelector(selector) : document.activeElement || document.body
+          if (selector && !target) return { error: 'Element not found: ' + selector }
+          const opts = {
+            key,
+            code: key.length === 1 ? 'Key' + key.toUpperCase() : key,
+            bubbles: true,
+            cancelable: true,
+            ctrlKey: modifiers?.ctrl || false,
+            shiftKey: modifiers?.shift || false,
+            altKey: modifiers?.alt || false,
+            metaKey: modifiers?.meta || false,
+          }
+          target!.dispatchEvent(new KeyboardEvent('keydown', opts))
+          target!.dispatchEvent(new KeyboardEvent('keypress', opts))
+          target!.dispatchEvent(new KeyboardEvent('keyup', opts))
+          return { key, target: selector || 'activeElement' }
+        }
+
+        scroll(selector?: string, x?: number, y?: number) {
+          if (selector) {
+            const el = document.querySelector(selector)
+            if (!el) return { error: 'Element not found: ' + selector }
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            return { scrolledTo: selector }
+          }
+          window.scrollTo({ left: x || 0, top: y || 0, behavior: 'smooth' })
+          return { scrolledTo: { x: x || 0, y: y || 0 } }
+        }
+
+        getVisibleText(selector?: string) {
+          const el = selector ? document.querySelector(selector) : document.body
+          if (!el) return { error: 'Element not found: ' + selector }
+          return { text: (el as HTMLElement).innerText, length: (el as HTMLElement).innerText.length }
+        }
       }
 
       // Connect RPC to gateway (may be cross-origin)
