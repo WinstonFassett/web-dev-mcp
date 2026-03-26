@@ -43,9 +43,12 @@ if (opts.help) {
   web-dev-mcp — Universal web development MCP gateway
 
   Usage:
-    npx web-dev-mcp                                        # hub mode (no proxy)
-    npx web-dev-mcp --target http://localhost:3000          # proxy mode
+    npx web-dev-mcp                                        # hub mode
+    npx web-dev-mcp --target http://localhost:3000          # fixed proxy mode
     npx web-dev-mcp -t http://localhost:3000 -p 8080 --network
+
+  In hub mode (no --target), the gateway also acts as a dynamic proxy:
+    http://localhost:3333/http://localhost:3000/page  → proxies to localhost:3000
 
   Options:
     --target, -t <url>   Dev server URL to proxy (omit for hub mode)

@@ -327,13 +327,62 @@ export async function startGateway(options: GatewayOptions) {
       return
     }
 
-    // Proxy everything else to target (if in proxy mode)
+    // Proxy: fixed target, or dynamic target from URL path
     if (proxy) {
       proxy.web(req, res)
-    } else {
-      res.writeHead(404, { 'Content-Type': 'text/plain' })
-      res.end('Not found (gateway running in hub mode — no proxy target)')
+      return
     }
+
+    // Dynamic proxy: URL path contains the target, e.g. /http://localhost:3000/page
+    const targetMatch = url.match(/^\/(https?:\/\/.+)/)
+    if (targetMatch) {
+      const targetUrl = new URL(targetMatch[1])
+      req.url = targetUrl.pathname + targetUrl.search
+      const dynamicProxy = httpProxy.createProxyServer({
+        target: targetUrl.origin,
+        changeOrigin: true,
+        selfHandleResponse: true,
+      })
+      dynamicProxy.on('error', (err) => {
+        if (!res.headersSent) {
+          res.writeHead(502, { 'Content-Type': 'text/plain' })
+          res.end(`Proxy error: ${err.message}\nTarget: ${targetUrl.origin}`)
+        }
+      })
+      dynamicProxy.on('proxyRes', (proxyRes) => {
+        const contentType = proxyRes.headers['content-type'] ?? ''
+        if (!contentType.includes('text/html')) {
+          res.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
+          proxyRes.pipe(res)
+          return
+        }
+        // Inject client script into HTML
+        const chunks: Buffer[] = []
+        const contentEncoding = proxyRes.headers['content-encoding']
+        proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk))
+        proxyRes.on('end', () => {
+          let buffer = Buffer.concat(chunks)
+          if (contentEncoding === 'gzip') {
+            try { buffer = gunzipSync(buffer) } catch { res.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers); res.end(buffer); return }
+          }
+          let html = buffer.toString('utf-8')
+          const injection = `<script src="/__client.js"></script>`
+          if (html.includes('</head>')) html = html.replace('</head>', injection + '</head>')
+          else if (html.includes('</body>')) html = html.replace('</body>', injection + '</body>')
+          else html += injection
+          const headers = { ...proxyRes.headers }
+          delete headers['content-length']
+          delete headers['content-encoding']
+          res.writeHead(proxyRes.statusCode ?? 200, headers)
+          res.end(html)
+        })
+      })
+      dynamicProxy.web(req, res)
+      return
+    }
+
+    res.writeHead(404, { 'Content-Type': 'text/plain' })
+    res.end('Not found')
   }
 
   // Create server (HTTP or HTTPS)
