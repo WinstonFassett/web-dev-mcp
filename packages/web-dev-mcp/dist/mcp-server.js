@@ -211,6 +211,167 @@ function createMcpServerInstance(ctx) {
             isError: true,
         };
     });
+    // --- Browser interaction tools ---
+    mcp.tool('screenshot', 'Take a screenshot of the page or a specific element. Returns base64 PNG.', {
+        selector: z.string().optional().describe('CSS selector to screenshot. Omit for full page.'),
+    }, async (args) => {
+        const stub = getBrowserStub();
+        if (!stub)
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'No browser connected' }) }], isError: true };
+        try {
+            const result = await stub.screenshot(args.selector);
+            if (result.error)
+                return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: true };
+            return {
+                content: [
+                    { type: 'image', data: result.data.replace(/^data:image\/png;base64,/, ''), mimeType: 'image/png' },
+                    { type: 'text', text: JSON.stringify({ width: result.width, height: result.height }, null, 2) },
+                ],
+            };
+        }
+        catch (err) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: err.message ?? String(err) }) }], isError: true };
+        }
+    });
+    mcp.tool('click', 'Click an element by CSS selector.', { selector: z.string().describe('CSS selector of the element to click') }, async (args) => {
+        const stub = getBrowserStub();
+        if (!stub)
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'No browser connected' }) }], isError: true };
+        try {
+            const result = await stub.click(args.selector);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !!result.error };
+        }
+        catch (err) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: err.message ?? String(err) }) }], isError: true };
+        }
+    });
+    mcp.tool('fill', 'Fill an input or textarea with a value. Dispatches input and change events.', {
+        selector: z.string().describe('CSS selector of the input/textarea'),
+        value: z.string().describe('Value to fill'),
+    }, async (args) => {
+        const stub = getBrowserStub();
+        if (!stub)
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'No browser connected' }) }], isError: true };
+        try {
+            const result = await stub.fill(args.selector, args.value);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !!result.error };
+        }
+        catch (err) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: err.message ?? String(err) }) }], isError: true };
+        }
+    });
+    mcp.tool('select_option', 'Select an option in a <select> element by value or visible text.', {
+        selector: z.string().describe('CSS selector of the <select> element'),
+        value: z.string().describe('Option value or visible text to select'),
+    }, async (args) => {
+        const stub = getBrowserStub();
+        if (!stub)
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'No browser connected' }) }], isError: true };
+        try {
+            const result = await stub.selectOption(args.selector, args.value);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !!result.error };
+        }
+        catch (err) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: err.message ?? String(err) }) }], isError: true };
+        }
+    });
+    mcp.tool('hover', 'Hover over an element by CSS selector.', { selector: z.string().describe('CSS selector of the element to hover') }, async (args) => {
+        const stub = getBrowserStub();
+        if (!stub)
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'No browser connected' }) }], isError: true };
+        try {
+            const result = await stub.hover(args.selector);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !!result.error };
+        }
+        catch (err) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: err.message ?? String(err) }) }], isError: true };
+        }
+    });
+    mcp.tool('press_key', 'Press a keyboard key, optionally with modifiers.', {
+        key: z.string().describe('Key to press (e.g. "Enter", "Escape", "a", "Tab")'),
+        modifiers: z.object({
+            ctrl: z.boolean().optional(),
+            shift: z.boolean().optional(),
+            alt: z.boolean().optional(),
+            meta: z.boolean().optional(),
+        }).optional().describe('Modifier keys to hold'),
+        selector: z.string().optional().describe('CSS selector of target element. Default: active element.'),
+    }, async (args) => {
+        const stub = getBrowserStub();
+        if (!stub)
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'No browser connected' }) }], isError: true };
+        try {
+            const result = await stub.pressKey(args.key, args.modifiers, args.selector);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !!result.error };
+        }
+        catch (err) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: err.message ?? String(err) }) }], isError: true };
+        }
+    });
+    mcp.tool('navigate', 'Navigate the browser to a URL.', { url: z.string().describe('URL to navigate to') }, async (args) => {
+        const stub = getBrowserStub();
+        if (!stub)
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'No browser connected' }) }], isError: true };
+        try {
+            await stub.eval(`window.location.href = ${JSON.stringify(args.url)}`);
+            return { content: [{ type: 'text', text: JSON.stringify({ navigated: args.url }) }] };
+        }
+        catch (err) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: err.message ?? String(err) }) }], isError: true };
+        }
+    });
+    mcp.tool('go_back', 'Navigate back in browser history.', async () => {
+        const stub = getBrowserStub();
+        if (!stub)
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'No browser connected' }) }], isError: true };
+        try {
+            await stub.eval('history.back()');
+            return { content: [{ type: 'text', text: JSON.stringify({ action: 'back' }) }] };
+        }
+        catch (err) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: err.message ?? String(err) }) }], isError: true };
+        }
+    });
+    mcp.tool('go_forward', 'Navigate forward in browser history.', async () => {
+        const stub = getBrowserStub();
+        if (!stub)
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'No browser connected' }) }], isError: true };
+        try {
+            await stub.eval('history.forward()');
+            return { content: [{ type: 'text', text: JSON.stringify({ action: 'forward' }) }] };
+        }
+        catch (err) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: err.message ?? String(err) }) }], isError: true };
+        }
+    });
+    mcp.tool('scroll', 'Scroll to an element or to absolute coordinates.', {
+        selector: z.string().optional().describe('CSS selector to scroll into view.'),
+        x: z.number().optional().describe('Horizontal scroll position'),
+        y: z.number().optional().describe('Vertical scroll position'),
+    }, async (args) => {
+        const stub = getBrowserStub();
+        if (!stub)
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'No browser connected' }) }], isError: true };
+        try {
+            const result = await stub.scroll(args.selector, args.x, args.y);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !!result.error };
+        }
+        catch (err) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: err.message ?? String(err) }) }], isError: true };
+        }
+    });
+    mcp.tool('get_visible_text', 'Get the visible text content of an element or the whole page.', { selector: z.string().optional().describe('CSS selector. Default: document body.') }, async (args) => {
+        const stub = getBrowserStub();
+        if (!stub)
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'No browser connected' }) }], isError: true };
+        try {
+            const result = await stub.getVisibleText(args.selector);
+            return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError: !!result.error };
+        }
+        catch (err) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: err.message ?? String(err) }) }], isError: true };
+        }
+    });
     mcp.tool('get_react_tree', 'React component tree snapshot via bippy. Requires --react flag.', {
         depth: z.number().optional().describe('Max tree depth (default: 8, max: 20)'),
         filter_name: z.string().optional().describe('Include only components matching this pattern'),
