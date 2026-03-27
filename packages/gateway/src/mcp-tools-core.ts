@@ -8,9 +8,6 @@ import { truncateChannelFiles } from './session.js'
 import { getDiagnostics } from './log-reader.js'
 import { getBrowserStub } from './rpc-server.js'
 
-// Persistent state per MCP session for eval_capnweb — survives across tool calls
-export const capnwebStates = new Map<string, Record<string, any>>()
-
 export function getLogPaths(ctx: McpContext): Record<string, string> {
   if (ctx.registry) {
     const latestServer = ctx.registry.getLatest()
@@ -48,57 +45,39 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
 
   mcp.tool(
     'clear',
-    'Reset logs and/or capnweb session state. Call before a code change for clean diagnostic reads.',
+    'Truncate log files and set checkpoint. Call before a code change so get_diagnostics(since_checkpoint) shows only new events.',
     {
-      logs: z.boolean().optional().describe('Clear log files and set checkpoint (default: true)'),
-      state: z.boolean().optional().describe('Clear capnweb persistent state/refs (default: false)'),
       channels: z.array(z.string()).optional().describe('Which log channels to clear. Default: all.'),
     },
-    async (args, extra) => {
-      const clearLogs = args.logs !== false
-      const clearState = args.state === true
-      const result: any = {}
-
-      if (clearLogs) {
-        let channelsToClear = args.channels
-        if (!channelsToClear || channelsToClear.length === 0) {
-          channelsToClear = ctx.session.channels
-        }
-        const countsBefore = truncateChannelFiles(ctx.session.files, channelsToClear)
-        ctx.session.checkpointTs = Date.now()
-        result.logs_cleared = countsBefore
-        result.checkpoint_ts = ctx.session.checkpointTs
+    async (args) => {
+      let channelsToClear = args.channels
+      if (!channelsToClear || channelsToClear.length === 0) {
+        channelsToClear = ctx.session.channels
       }
-
-      if (clearState) {
-        const sessionId = extra.sessionId ?? '_default'
-        capnwebStates.delete(sessionId)
-        result.state_cleared = true
+      const countsBefore = truncateChannelFiles(ctx.session.files, channelsToClear)
+      ctx.session.checkpointTs = Date.now()
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({
+          checkpoint_ts: ctx.session.checkpointTs,
+          logs_cleared: countsBefore,
+        }, null, 2) }],
       }
-
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
     },
   )
 
   mcp.tool(
     'eval_capnweb',
-    'Run JavaScript server-side with document/window as capnweb remote proxies to the browser DOM. Each property access or method call is an RPC round-trip. CSP-safe, multi-statement, supports await. A persistent `state` object survives across calls — store references in it. Use `browser.*` helpers for common operations.',
+    'Run JavaScript server-side with document/window as capnweb remote proxies to the browser DOM. Each property access or method call is an RPC round-trip. CSP-safe, multi-statement, supports await. Stateless per call — re-query elements each time. Use `browser.*` helpers for common operations.',
     {
-      code: z.string().describe('JavaScript code. Globals: `document`, `window` (capnweb proxies), `state` (persistent), `browser` (helpers: .markdown(sel?), .screenshot(sel?), .navigate(url), .click(sel), .fill(sel, val), .waitFor(fnOrSel, interval?, timeout?), .eval(expr)). Use `await` to read values.'),
+      code: z.string().describe('JavaScript code. Globals: `document`, `window` (capnweb proxies), `browser` (helpers: .markdown(sel?), .screenshot(sel?), .navigate(url), .click(sel), .fill(sel, val), .waitFor(fnOrSel, interval?, timeout?), .eval(expr)). Use `await` to read values.'),
     },
-    async (args, extra) => {
+    async (args) => {
       const stub = getBrowserStub()
       if (!stub) {
         return { content: [{ type: 'text' as const, text: JSON.stringify({ error: 'No browser connected' }) }], isError: true }
       }
       try {
         const start = Date.now()
-        const sessionId = extra.sessionId ?? '_default'
-        if (!capnwebStates.has(sessionId)) {
-          capnwebStates.set(sessionId, {})
-        }
-        const state = capnwebStates.get(sessionId)!
-
         const doc = (stub as any).document
         const browser = {
           eval: (expression: string) => stub.eval(expression),
@@ -126,13 +105,12 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
         }
 
         const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
-        const fn = new AsyncFunction('document', 'window', 'localStorage', 'sessionStorage', 'state', 'browser', args.code)
+        const fn = new AsyncFunction('document', 'window', 'localStorage', 'sessionStorage', 'browser', args.code)
         const result = await fn(
           (stub as any).document,
           (stub as any).window,
           (stub as any).localStorage,
           (stub as any).sessionStorage,
-          state,
           browser,
         )
         const serialized = typeof result === 'string' ? result
