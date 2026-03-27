@@ -4,14 +4,14 @@ Give AI agents live browser access during development. Console logs, DOM queries
 
 ```mermaid
 graph LR
-    Agent -->|MCP tools| Gateway
-    Agent -->|"capnweb (remote DOM)"| Gateway
-    Gateway -->|RPC| Browser
+    Agent -->|MCP tools| GW
+    Agent -->|"capnweb remote DOM"| GW
+    GW -->|capnweb RPC| Browser
 
-    subgraph Gateway[:3333]
-        MCP[/__mcp/sse]
-        AgentRPC[/__rpc/agent]
-        BrowserRPC[/__rpc]
+    subgraph GW["Gateway :3333"]
+        MCP["/__mcp/sse"]
+        AgentRPC["/__rpc/agent"]
+        BrowserRPC["/__rpc"]
     end
 ```
 
@@ -23,21 +23,19 @@ graph LR
 npx web-dev-mcp-gateway
 ```
 
-### 2. Open any site through it
-
-Browse `http://localhost:3333/https://news.ycombinator.com/` — the gateway proxies and injects instrumentation. Or use with your dev server:
+### 2. Open your dev app or any site through it
 
 ```bash
-# Vite
+# Your dev server
 npx web-dev-mcp-gateway --target http://localhost:5173
 
-# Or hub mode — Next.js/Vite connect to gateway via adapters
-npx web-dev-mcp-gateway
+# Or browse any URL through the gateway proxy
+# http://localhost:3333/https://example.com/
 ```
 
 ### 3. Connect your agent
 
-**MCP** (add to `.mcp.json`):
+Add to `.mcp.json`:
 ```json
 {
   "mcpServers": {
@@ -49,35 +47,51 @@ npx web-dev-mcp-gateway
 }
 ```
 
-**capnweb** (direct remote DOM):
+## MCP Tools (core)
+
+Three tools. `eval_capnweb` does most of the work.
+
+**`get_diagnostics`** — server-side console logs + errors + network + HMR/build status in one call. Use `since_checkpoint: true` after `clear` for clean reads.
+
+**`clear`** — reset logs and/or capnweb session state. Call before a code change.
+
+**`eval_capnweb`** — run JavaScript server-side with `document` and `window` as [capnweb](https://blog.cloudflare.com/capnweb-javascript-rpc-library/) remote proxies to the browser. CSP-safe, multi-statement, supports await. Persistent `state` object survives across calls.
+
 ```js
-import { connect } from 'web-dev-mcp-gateway/agent'
+// Read the page as markdown
+eval_capnweb: return await browser.markdown('#main')
 
-const browser = await connect('ws://localhost:3333/__rpc/agent')
-const { document } = browser
+// Click by visible text
+eval_capnweb: await browser.click('text=Submit')
 
-const title = await document.querySelector('h1').textContent
-await document.querySelector('a.comments').click()
+// Fill a form
+eval_capnweb: await browser.fill('#email', 'test@example.com')
 
-browser.close()
+// Take a screenshot
+eval_capnweb: return await browser.screenshot('#my-component')
+
+// DOM traversal chain
+eval_capnweb: |
+  const link = document.querySelector('a[href*="doom"]')
+  const row = link.closest('tr').nextElementSibling
+  return await row.querySelector('a:last-child').href
+
+// Store refs across calls
+eval_capnweb: state.heading = document.querySelector('h1'); return await state.heading.textContent
+eval_capnweb: return await state.heading.getAttribute('class')
+
+// Wait for async UI
+eval_capnweb: |
+  await browser.click('text=Load')
+  const el = await browser.waitFor('.success-toast', 100, 5000)
+  return await el.textContent
 ```
 
-## Two interfaces
+Full tools available at `/__mcp/sse?tools=full` (23 tools including click, fill, screenshot, navigate, query_dom, etc. as individual tools).
 
-### MCP Tools — high level, works with any MCP client
+## capnweb Agent Client
 
-| Tool | Purpose |
-|---|---|
-| `get_page_markdown` | Page as markdown with `[link text](url)` — best way to read a page |
-| `get_diagnostics` | Console + errors + network + HMR status in one call |
-| `screenshot` | Full page or element, returns PNG |
-| `click` / `fill` / `hover` | Interact by CSS selector |
-| `navigate` | Go to URL |
-| `clear_logs` | Reset checkpoint, then `get_diagnostics(since_checkpoint: true)` for clean reads |
-
-### capnweb Agent Client — live remote DOM
-
-Connect to `/__rpc/agent` and get the browser's actual `document` as a remote proxy. Chain DOM calls with [promise pipelining](https://blog.cloudflare.com/capnweb-javascript-rpc-library/) — multiple calls batch into minimal round trips.
+For coding agents that can run scripts — connect directly and get live remote DOM with [promise pipelining](https://blog.cloudflare.com/capnweb-javascript-rpc-library/).
 
 ```js
 import { connect } from 'web-dev-mcp-gateway/agent'
@@ -85,23 +99,19 @@ import { connect } from 'web-dev-mcp-gateway/agent'
 const browser = await connect('ws://localhost:3333/__rpc/agent')
 const { document } = browser
 
-// Pipelined — these chain without individual awaits
+// Pipelined — batched into minimal round trips
 const link = document.querySelector('a[href*="doom-over-dns"]')
 const commentsRow = link.closest('tr').nextElementSibling
 const commentsHref = await commentsRow.querySelector('.subline a:last-child').href
 
-// Navigate
 await browser.navigate(commentsHref)
+browser.close()
 
 // Reconnect after page load
-browser.close()
 const page2 = await connect('ws://localhost:3333/__rpc/agent')
-console.log(await page2.document.title) // "DOOM Over DNS | Hacker News"
-console.log(await page2.document.querySelector('.commtext').textContent)
+console.log(await page2.document.title)
 page2.close()
 ```
-
-No `eval()`. No CSP issues. Works on any site.
 
 ## Packages
 
@@ -136,35 +146,15 @@ export default withWebDevMcp(nextConfig, {
 })
 ```
 
-Start the gateway (`npx web-dev-mcp-gateway`) and Next.js (`npm run dev`). The adapter injects instrumentation via webpack and routes MCP/RPC to the gateway through Next.js rewrites.
+Start the gateway and Next.js. The adapter injects instrumentation via webpack and routes MCP/RPC to the gateway through Next.js rewrites.
 
 ## Gateway modes
 
-**Proxy** (`--target`): sits in front of dev server, proxies all traffic, injects client script into HTML.
+**Proxy** (`--target http://localhost:3000`): reverse proxy, injects client script into HTML responses.
 
-**Hub** (no `--target`): standalone MCP/RPC hub. Dev servers connect via adapters. Also supports dynamic proxy — `http://localhost:3333/https://any-url.com/` proxies and instruments any page on the fly.
-
-```bash
-# Proxy mode
-npx web-dev-mcp-gateway --target http://localhost:3000
-
-# Hub mode
-npx web-dev-mcp-gateway
-
-# Hub + dynamic proxy
-# Just browse: http://localhost:3333/https://example.com/
-```
+**Hub** (no `--target`): standalone MCP/RPC/capnweb hub. Dev servers connect via adapters. Also supports dynamic proxy — browse `http://localhost:3333/https://any-url.com/` to proxy and instrument any page.
 
 ## How it works
-
-The gateway injects a small client script into pages. This script:
-- Patches `console.*`, `fetch`, `XMLHttpRequest` to relay events
-- Connects to `/__rpc` via [capnweb](https://blog.cloudflare.com/capnweb-javascript-rpc-library/) WebSocket
-- Exposes `document`, `window` as remote objects via `AnyTarget` proxy
-
-The gateway holds browser stubs and routes them to:
-- **MCP tools** — predefined operations (screenshot, click, diagnostics)
-- **Agent RPC** (`/__rpc/agent`) — direct remote DOM access for agents
 
 ```mermaid
 sequenceDiagram
@@ -172,13 +162,20 @@ sequenceDiagram
     participant Gateway
     participant Browser
 
-    Browser->>Gateway: capnweb RPC (exposes document, window)
-    Agent->>Gateway: capnweb RPC (requests document)
-    Gateway-->>Agent: remote document proxy
+    Browser->>Gateway: capnweb RPC — exposes document, window
+    Agent->>Gateway: MCP or capnweb — requests browser access
+    Gateway-->>Agent: remote DOM proxy
 
     Agent->>Browser: document.querySelector('h1').textContent
     Browser-->>Agent: "Hello World"
 ```
+
+The gateway injects a client script into pages that:
+- Patches `console.*`, `fetch`, `XMLHttpRequest` to relay events to NDJSON log files
+- Connects to `/__rpc` via capnweb WebSocket
+- Exposes `document`, `window` as remote objects
+
+The gateway routes browser stubs to MCP tools and agent RPC connections.
 
 ## License
 
