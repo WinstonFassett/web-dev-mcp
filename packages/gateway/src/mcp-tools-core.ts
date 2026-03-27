@@ -1,4 +1,4 @@
-// Core MCP tools: get_diagnostics, clear, eval_capnweb
+// Core MCP tools: get_diagnostics, clear, eval_js_rpc
 // These are the minimal set for coding agents.
 
 import { z } from 'zod'
@@ -7,6 +7,10 @@ import type { McpContext } from './mcp-server.js'
 import { truncateChannelFiles } from './session.js'
 import { getDiagnostics } from './log-reader.js'
 import { getBrowserStub } from './rpc-server.js'
+
+// Persistent state per MCP session — holds capnweb proxy refs across eval_js_rpc calls
+// Agent stores refs like state.store = window.__REDUX_STORE__ and uses them in later calls
+export const sessionStates = new Map<string, Record<string, any>>()
 
 export function getLogPaths(ctx: McpContext): Record<string, string> {
   if (ctx.registry) {
@@ -66,18 +70,23 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
   )
 
   mcp.tool(
-    'eval_capnweb',
-    'Run JavaScript server-side with document/window as capnweb remote proxies to the browser DOM. Each property access or method call is an RPC round-trip. CSP-safe, multi-statement, supports await. Stateless per call — re-query elements each time. Use `browser.*` helpers for common operations.',
+    'eval_js_rpc',
+    'Run JavaScript server-side with document/window as capnweb remote proxies to the browser DOM. Each property access or method call is an RPC round-trip. CSP-safe, multi-statement, supports await. Optional `state` object persists across calls — use it to hold refs to JS runtime objects (stores, globals) that survive HMR. Use `browser.*` helpers for common operations.',
     {
-      code: z.string().describe('JavaScript code. Globals: `document`, `window` (capnweb proxies), `browser` (helpers: .markdown(sel?), .screenshot(sel?), .navigate(url), .click(sel), .fill(sel, val), .waitFor(fnOrSel, interval?, timeout?), .eval(expr)). Use `await` to read values.'),
+      code: z.string().describe('JavaScript code. Globals: `document`, `window` (capnweb proxies), `state` (persists across calls — store refs here), `browser` (helpers: .markdown(sel?), .screenshot(sel?), .navigate(url), .click(sel), .fill(sel, val), .waitFor(fnOrSel, interval?, timeout?), .eval(expr)). Use `await` to read values.'),
     },
-    async (args) => {
+    async (args, extra) => {
       const stub = getBrowserStub()
       if (!stub) {
         return { content: [{ type: 'text' as const, text: JSON.stringify({ error: 'No browser connected' }) }], isError: true }
       }
       try {
         const start = Date.now()
+        const sessionId = extra.sessionId ?? '_default'
+        if (!sessionStates.has(sessionId)) {
+          sessionStates.set(sessionId, {})
+        }
+        const state = sessionStates.get(sessionId)!
         const doc = (stub as any).document
         const browser = {
           eval: (expression: string) => stub.eval(expression),
@@ -105,12 +114,13 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
         }
 
         const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
-        const fn = new AsyncFunction('document', 'window', 'localStorage', 'sessionStorage', 'browser', args.code)
+        const fn = new AsyncFunction('document', 'window', 'localStorage', 'sessionStorage', 'state', 'browser', args.code)
         const result = await fn(
           (stub as any).document,
           (stub as any).window,
           (stub as any).localStorage,
           (stub as any).sessionStorage,
+          state,
           browser,
         )
         const serialized = typeof result === 'string' ? result
