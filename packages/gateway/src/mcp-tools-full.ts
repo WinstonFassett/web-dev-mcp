@@ -296,18 +296,4 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
     },
   )
 
-  mcp.tool('get_react_tree', 'React component tree snapshot via bippy. Requires --react flag.',
-    {
-      depth: z.number().optional().describe('Max tree depth (default: 8)'),
-      filter_name: z.string().optional(),
-      include_props: z.boolean().optional(),
-      include_state: z.boolean().optional(),
-    },
-    async (args) => {
-      const stub = getBrowserStub()
-      if (!stub) return noBrowser()
-      try { const r = await (stub as any).getReactTree(args); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }] } }
-      catch (err: any) { return errResult(err) }
-    },
-  )
 }
