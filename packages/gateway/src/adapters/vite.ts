@@ -49,8 +49,22 @@ export function webDevMcp(options: ViteAdapterOptions = {}): Plugin {
       ;(config.server as any).forwardConsole = false
     },
 
-    configureServer() {
+    configureServer(server) {
       connectDevEvents()
+
+      // Serve gateway's bundled client.js at /__client.js
+      server.middlewares.use((req: any, res: any, next: any) => {
+        if (req.url === '/__client.js') {
+          if (!clientSource) {
+            const clientPath = join(__dirname, '..', 'client.js')
+            clientSource = readFileSync(clientPath, 'utf-8')
+          }
+          res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' })
+          res.end(clientSource)
+          return
+        }
+        next()
+      })
     },
 
     resolveId(id) {
@@ -59,18 +73,19 @@ export function webDevMcp(options: ViteAdapterOptions = {}): Plugin {
 
     load(id) {
       if (id === RESOLVED_VIRTUAL_MODULE_ID) {
-        if (!clientSource) {
-          // Load the bundled client from dist/
-          const clientPath = join(__dirname, '..', 'client.js')
-          clientSource = readFileSync(clientPath, 'utf-8')
-        }
-
-        // Prepend gateway origin so client connects cross-origin
-        let preamble = `window.__WEB_DEV_MCP_ORIGIN__ = ${JSON.stringify(gatewayUrl)};\n`
+        // Virtual module sets gateway origin and loads client.js via script tag
+        let code = `window.__WEB_DEV_MCP_ORIGIN__ = ${JSON.stringify(gatewayUrl)};\n`
         if (options.react) {
-          preamble += `window.__WEB_DEV_MCP_REACT__ = true;\n`
+          code += `window.__WEB_DEV_MCP_REACT__ = true;\n`
         }
-        return preamble + clientSource
+        code += `
+if (!window.__WEB_DEV_MCP_LOADED__) {
+  const s = document.createElement('script');
+  s.src = '/__client.js';
+  document.head.appendChild(s);
+}
+`
+        return code
       }
     },
 

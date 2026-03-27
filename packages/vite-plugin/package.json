@@ -1,13 +1,10 @@
 {
   "name": "vite-live-dev-mcp",
   "version": "0.1.0",
-  "description": "Vite plugin giving AI coding agents live observability into running React apps via MCP",
+  "description": "Vite plugin for web-dev-mcp — thin re-export of web-dev-mcp-gateway/vite",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "bin": {
-    "vite-live-dev-mcp": "dist/cli.js"
-  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -15,13 +12,10 @@
     }
   },
   "files": [
-    "dist",
-    "client"
+    "dist"
   ],
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "test": "vitest run"
+    "build": "tsc"
   },
   "keywords": [
     "vite",
@@ -35,24 +29,13 @@
     "directory": "packages/vite-plugin"
   },
   "license": "MIT",
+  "dependencies": {
+    "web-dev-mcp-gateway": "^0.1.0"
+  },
   "peerDependencies": {
-    "bippy": ">=0.5.0",
     "vite": ">=6.0.0"
   },
-  "peerDependenciesMeta": {
-    "bippy": {
-      "optional": true
-    }
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.0",
-    "capnweb": "^0.6.1",
-    "ws": "^8.20.0",
-    "zod": "^4.0.0"
-  },
   "devDependencies": {
-    "@types/node": "^25.5.0",
-    "@types/ws": "^8.18.1",
     "typescript": "^5.8.0",
     "vite": "^8.0.0"
   }

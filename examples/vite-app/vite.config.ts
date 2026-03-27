@@ -1,13 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { viteLiveDevMcp } from 'vite-live-dev-mcp'
+import { webDevMcp } from 'web-dev-mcp-gateway/vite'
 
 export default defineConfig({
   plugins: [
     react(),
-    viteLiveDevMcp({
-      network: true,
-      gateway: true,  // Register with gateway at http://localhost:3333
-    }),
+    webDevMcp(),
   ],
 })
