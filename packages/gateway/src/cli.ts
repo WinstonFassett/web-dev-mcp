@@ -10,14 +10,10 @@ function parseArgs(args: string[]): Partial<GatewayOptions> & { help?: boolean }
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
-    if (arg === '--target' || arg === '-t') {
-      result.target = args[++i]
-    } else if (arg === '--port' || arg === '-p') {
+    if (arg === '--port' || arg === '-p') {
       result.port = parseInt(args[++i], 10)
     } else if (arg === '--network') {
       result.network = true
-    } else if (arg === '--react') {
-      result.react = true
     } else if (arg === '--https') {
       result.https = true
     } else if (arg === '--cert') {
@@ -28,8 +24,6 @@ function parseArgs(args: string[]): Partial<GatewayOptions> & { help?: boolean }
       result.autoRegister = true
     } else if (arg === '--help' || arg === '-h') {
       result.help = true
-    } else if (!arg.startsWith('-') && !result.target) {
-      result.target = arg
     }
   }
 
@@ -40,21 +34,18 @@ const opts = parseArgs(args)
 
 if (opts.help) {
   console.log(`
-  web-dev-mcp — Universal web development MCP gateway
+  web-dev-mcp-gateway — MCP gateway for web development
 
   Usage:
-    npx web-dev-mcp                                        # hub mode
-    npx web-dev-mcp --target http://localhost:3000          # fixed proxy mode
-    npx web-dev-mcp -t http://localhost:3000 -p 8080 --network
+    npx web-dev-mcp-gateway
+    npx web-dev-mcp-gateway -p 8080 --network
 
-  In hub mode (no --target), the gateway also acts as a dynamic proxy:
-    http://localhost:3333/http://localhost:3000/page  → proxies to localhost:3000
+  Dynamic proxy (browse any URL through the gateway):
+    http://localhost:3333/http://localhost:3000/page
 
   Options:
-    --target, -t <url>   Dev server URL to proxy (omit for hub mode)
     --port, -p <port>    Gateway port (default: 3333)
     --network            Capture fetch/XHR requests
-    --react              Enable React DevTools (bippy) integration
     --https              Enable HTTPS with self-signed cert
     --cert <path>        Custom TLS certificate (use with --key)
     --key <path>         Custom TLS private key (use with --cert)
@@ -64,17 +55,9 @@ if (opts.help) {
   process.exit(0)
 }
 
-// Normalize target URL if provided
-let target = opts.target
-if (target && !target.startsWith('http')) {
-  target = 'http://' + target
-}
-
 startGateway({
-  target,
   port: opts.port,
   network: opts.network,
-  react: opts.react,
   https: opts.https,
   cert: opts.cert,
   key: opts.key,

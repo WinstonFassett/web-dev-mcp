@@ -31,7 +31,6 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
         channels_active: info.channels,
         server_url: info.serverUrl,
         mcp_url: info.mcpUrl,
-        target_url: info.targetUrl,
         started_at: info.startedAt,
         connected_clients: ctx.connectedClients,
       }

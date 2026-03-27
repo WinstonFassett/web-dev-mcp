@@ -62,7 +62,6 @@ function addCorsHeaders(res: http.ServerResponse) {
 
 export async function startGateway(options: GatewayOptions) {
   const port = options.port ?? 3333
-  const target = options.target
   const mcpPath = '/__mcp'
   const useHttps = options.https ?? false
 
@@ -85,93 +84,6 @@ export async function startGateway(options: GatewayOptions) {
       console.log(`[registry] Cleaned up ${removed} dead server(s)`)
     }
   }, 5000)
-
-  // Create HTTP proxy only when target is provided (proxy mode)
-  let proxy: ReturnType<typeof httpProxy.createProxyServer> | null = null
-
-  if (target) {
-    const p = httpProxy.createProxyServer({
-      target,
-      changeOrigin: true,
-      selfHandleResponse: true,
-    })
-    proxy = p
-
-    p.on('error', (err, _req, res) => {
-      console.error(`[web-dev-mcp] Proxy error: ${err.message}`)
-      if (res && 'writeHead' in res && !res.headersSent) {
-        (res as http.ServerResponse).writeHead(502, { 'Content-Type': 'text/plain' })
-        ;(res as http.ServerResponse).end(`Gateway error: ${err.message}\nIs your dev server running at ${target}?`)
-      }
-    })
-
-    // Handle ALL proxy responses — inject script into HTML, pass through everything else
-    p.on('proxyRes', (proxyRes, _req, res) => {
-      const contentType = proxyRes.headers['content-type'] ?? ''
-      const isHtml = contentType.includes('text/html')
-
-      if (!isHtml) {
-        (res as http.ServerResponse).writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
-        proxyRes.pipe(res as http.ServerResponse)
-        return
-      }
-
-      // Buffer HTML to inject client script
-      const chunks: Buffer[] = []
-      const contentEncoding = proxyRes.headers['content-encoding']
-
-      proxyRes.on('data', (chunk: Buffer) => chunks.push(chunk))
-      proxyRes.on('end', () => {
-        let buffer = Buffer.concat(chunks)
-
-        // Decompress if gzipped
-        if (contentEncoding === 'gzip') {
-          try {
-            buffer = gunzipSync(buffer)
-          } catch (err) {
-            console.error('[web-dev-mcp] Failed to decompress gzip:', err)
-            // Send as-is if decompression fails
-            ;(res as http.ServerResponse).writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
-            ;(res as http.ServerResponse).end(buffer)
-            return
-          }
-        }
-
-        let html = buffer.toString('utf-8')
-
-        // Build injection: optional flags + client script
-        let injection = ''
-        if (options.react) {
-          injection += `<script>window.__WEB_DEV_MCP_REACT__=true</script>`
-        }
-
-        // In hybrid mode, tell client which server it belongs to
-        if (registry.size() > 0) {
-          const latestServer = registry.getLatest()
-          if (latestServer) {
-            injection += `<script>window.__WEB_DEV_MCP_SERVER__='${latestServer.id}'</script>`
-          }
-        }
-
-        injection += `<script src="/__client.js"></script>`
-
-        if (html.includes('</head>')) {
-          html = html.replace('</head>', injection + '</head>')
-        } else if (html.includes('</body>')) {
-          html = html.replace('</body>', injection + '</body>')
-        } else {
-          html += injection
-        }
-
-        const headers = { ...proxyRes.headers }
-        delete headers['content-length']
-        delete headers['content-encoding']
-
-        ;(res as http.ServerResponse).writeHead(proxyRes.statusCode ?? 200, headers)
-        ;(res as http.ServerResponse).end(html)
-      })
-    })
-  }
 
   // Initialize session
   const protocol = useHttps ? 'https' : 'http'
@@ -305,8 +217,7 @@ export async function startGateway(options: GatewayOptions) {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({
         gateway: 'web-dev-mcp',
-        mode: target ? (registry.size() > 0 ? 'hybrid' : 'proxy') : 'hub',
-        target: target ?? null,
+        mode: registry.size() > 0 ? 'hybrid' : 'hub',
         session: session.info,
         registered_servers: registry.getAll(),
         uptime_ms: Date.now() - session.startedAt,
@@ -324,12 +235,6 @@ export async function startGateway(options: GatewayOptions) {
           res.end(`Batch RPC error: ${err.message}`)
         }
       })
-      return
-    }
-
-    // Proxy: fixed target, or dynamic target from URL path
-    if (proxy) {
-      proxy.web(req, res)
       return
     }
 
@@ -430,9 +335,6 @@ export async function startGateway(options: GatewayOptions) {
       })
     } else if (url === '/__rpc' || url.startsWith('/__rpc?') || url.startsWith('/__rpc/agent')) {
       // Handled by setupRpcWebSocket / setupAgentRpcWebSocket upgrade listeners
-    } else if (proxy) {
-      // Proxy WebSocket to target
-      proxy.ws(request, socket, head)
     } else {
       socket.destroy()
     }
@@ -494,11 +396,7 @@ export async function startGateway(options: GatewayOptions) {
     console.log(`  web-dev-mcp gateway`)
     console.log(`  ───────────────────────────────`)
     console.log(`  Listen:  ${proto}://localhost:${port}`)
-    if (target) {
-      console.log(`  Mode:    proxy → ${target}`)
-    } else {
-      console.log(`  Mode:    hub (no proxy target)`)
-    }
+    console.log(`  Proxy:   ${proto}://localhost:${port}/http://your-dev-server/`)
     console.log(`  MCP:     ${proto}://localhost:${port}${mcpPath}/sse`)
     console.log(`  Logs:    ${session.logDir}`)
     if (useHttps) console.log(`  HTTPS:   enabled`)

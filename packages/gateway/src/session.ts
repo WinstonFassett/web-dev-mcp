@@ -30,9 +30,8 @@ export function initSession(
   serverUrl: string,
   mcpPath: string,
 ): SessionState {
-  const target = options.target ?? serverUrl
-  const sessionId = computeSessionId(target)
-  const logDir = getLogDir(target, options)
+  const sessionId = computeSessionId(serverUrl)
+  const logDir = getLogDir(serverUrl, options)
   const mcpUrl = `${serverUrl}${mcpPath}/sse`
 
   mkdirSync(logDir, { recursive: true })
@@ -57,7 +56,6 @@ export function initSession(
     channels,
     serverUrl,
     mcpUrl,
-    targetUrl: options.target ?? null,
     startedAt: Date.now(),
   }
 
