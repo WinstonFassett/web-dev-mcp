@@ -229,3 +229,63 @@ export function setupRpcWebSocket(httpServer: { on(event: string, listener: (...
 
   return wss
 }
+
+// --- Agent RPC endpoint ---
+// Agents connect here and get a GatewayApi that proxies to the browser's document/window
+
+class GatewayApi extends RpcTarget {
+  get document() {
+    const stub = getBrowserStub()
+    if (!stub) throw new Error('No browser connected')
+    return (stub as any).document
+  }
+  get window() {
+    const stub = getBrowserStub()
+    if (!stub) throw new Error('No browser connected')
+    return (stub as any).window
+  }
+  get localStorage() {
+    const stub = getBrowserStub()
+    if (!stub) throw new Error('No browser connected')
+    return (stub as any).localStorage
+  }
+  get sessionStorage() {
+    const stub = getBrowserStub()
+    if (!stub) throw new Error('No browser connected')
+    return (stub as any).sessionStorage
+  }
+  getBrowserCount() {
+    return browsers.size
+  }
+  getBrowserList() {
+    return getAllBrowsers()
+  }
+}
+
+export function setupAgentRpcWebSocket(httpServer: { on(event: string, listener: (...args: any[]) => void): void }, agentPath: string) {
+  const wss = new WebSocketServer({ noServer: true })
+
+  httpServer.on('upgrade', (request: any, socket: any, head: any) => {
+    const url = request.url ?? ''
+    if (url === agentPath || url.startsWith(agentPath + '?')) {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request)
+      })
+    }
+  })
+
+  wss.on('connection', (ws) => {
+    const connId = Math.random().toString(36).slice(2)
+    const transport = createWsTransport(ws)
+    const api = new GatewayApi()
+    const session = new RpcSession(transport, api)
+
+    console.log(`[web-dev-mcp] Agent connected (${connId})`)
+
+    ws.on('close', () => {
+      console.log(`[web-dev-mcp] Agent disconnected (${connId})`)
+    })
+  })
+
+  return wss
+}

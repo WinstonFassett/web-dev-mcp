@@ -15,7 +15,7 @@ import { ErrorsWriter } from './writers/errors.js'
 import { NetworkWriter } from './writers/network.js'
 import { DevEventsWriter, type BuildEventPayload } from './writers/dev-events.js'
 import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './mcp-server.js'
-import { setupRpcWebSocket } from './rpc-server.js'
+import { setupRpcWebSocket, setupAgentRpcWebSocket } from './rpc-server.js'
 import { createCdpMiddleware, setupCdpWebSocket, type CdpContext } from './cdp-server.js'
 import { autoRegister } from './auto-register.js'
 import { ServerRegistry, type RegisteredServer } from './registry.js'
@@ -414,6 +414,7 @@ export async function startGateway(options: GatewayOptions) {
 
   // Setup RPC WebSocket (capnweb for eval/queryDom)
   setupRpcWebSocket(server, '/__rpc')
+  setupAgentRpcWebSocket(server, '/__rpc/agent')
 
   // Setup CDP WebSocket
   setupCdpWebSocket(server, cdpCtx)
@@ -430,8 +431,8 @@ export async function startGateway(options: GatewayOptions) {
       devEventsWss.handleUpgrade(request, socket, head, (ws) => {
         devEventsWss.emit('connection', ws, request)
       })
-    } else if (url === '/__rpc' || url.startsWith('/__rpc?')) {
-      // Handled by setupRpcWebSocket's own upgrade listener
+    } else if (url === '/__rpc' || url.startsWith('/__rpc?') || url.startsWith('/__rpc/agent')) {
+      // Handled by setupRpcWebSocket / setupAgentRpcWebSocket upgrade listeners
     } else if (url.startsWith('/__cdp/devtools/')) {
       // Handled by setupCdpWebSocket's own upgrade listener
     } else if (proxy) {
