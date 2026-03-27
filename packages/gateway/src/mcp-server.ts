@@ -244,6 +244,7 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
         // browser object exposes BrowserApi helpers that aren't on document/window
         const doc = (stub as any).document
         const browser = {
+          eval: (expression: string) => stub.eval(expression),
           markdown: (selector?: string) => (stub as any).getPageMarkdown(selector),
           screenshot: (selector?: string) => (stub as any).screenshot(selector),
           navigate: (url: string) => (stub as any).navigate(url),
