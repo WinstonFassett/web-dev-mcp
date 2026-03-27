@@ -21,12 +21,11 @@ get_diagnostics({ search: "TypeError" })     # text search
 
 ### `clear`
 
-Resets logs and/or capnweb session state. Call before a code change to get clean reads.
+Truncate log files and set checkpoint. Call before a code change so `get_diagnostics(since_checkpoint)` shows only new events.
 
 ```
-clear({ logs: true })                        # truncate log files, set checkpoint
-clear({ state: true })                       # clear capnweb persistent refs
-clear({ logs: true, state: true })           # both
+clear                                        # truncate all log channels
+clear({ channels: ["console"] })             # truncate specific channel
 ```
 
 ### `eval_capnweb`
@@ -39,7 +38,6 @@ Runs JavaScript on the server with `document` and `window` as live capnweb remot
 |---|---|
 | `document` | Remote DOM proxy. querySelector, textContent, click, etc. |
 | `window` | Remote window proxy. location, localStorage, etc. |
-| `state` | Persistent object — survives across calls. Store element refs here. |
 | `browser.markdown(selector?)` | Element/page to markdown with `[links](urls)` |
 | `browser.screenshot(selector?)` | PNG screenshot |
 | `browser.navigate(url)` | Change page (disconnects RPC, wait before next call) |
@@ -50,7 +48,7 @@ Runs JavaScript on the server with `document` and `window` as live capnweb remot
 ## Workflow: test-fix loop
 
 ```
-clear({ logs: true })
+clear
 # make code change — HMR reloads
 get_diagnostics({ since_checkpoint: true })
 # check errors, then visual:
@@ -83,17 +81,6 @@ await browser.fill('#password', 'secret')
 await browser.click('text=Sign In')
 ```
 
-**Store a ref, use it later:**
-```js
-// Call 1
-state.form = document.querySelector('form#signup')
-return await state.form.innerHTML
-
-// Call 2 (same MCP session — state persists)
-await browser.fill('#email', 'new@example.com')
-return await state.form.querySelector('.error').textContent
-```
-
 **Wait for async UI:**
 ```js
 await browser.click('text=Load Data')
@@ -112,7 +99,8 @@ return href
 ## Gotchas
 
 - `browser.navigate()` disconnects RPC — wait ~2-3s before next call. For SPA route changes, prefer `browser.click('text=Settings')` on a nav element.
-- `state` refs die on browser page reload. Re-query from `document`.
 - `browser.screenshot()` returns JSON with base64 data, not MCP image content type.
+
+For direct capnweb access (persistent WebSocket refs, HTTP batch, import IDs), see the `capnweb-browser` skill.
 
 See [RECIPES.md](RECIPES.md) for more patterns.

@@ -21,7 +21,7 @@ After changing plugin source, rebuild before testing examples.
 - Gateway CLI is `npx web-dev-mcp-gateway`, not `npx web-dev-mcp`.
 - MCP core toolset (3 tools) is at `/__mcp/sse`. Legacy full set (23 tools) at `/__mcp/sse?tools=full`.
 - `eval_capnweb` runs JS on the server, not in the browser. `document`/`window` are capnweb remote proxies. Each property access is an RPC call.
-- `eval_capnweb` has a persistent `state` object per MCP session and `browser.*` helpers (markdown, screenshot, navigate, click, fill, waitFor).
+- `eval_capnweb` is stateless per call. Has `browser.*` helpers (markdown, screenshot, navigate, click, fill, waitFor). Re-query DOM each call.
 - CDP/chobitsu was removed. No CDP endpoint exists anymore.
 - After `navigate()`, browser RPC reconnects — wait ~2-3s before next tool call. SPA route changes via `click` don't disconnect.
 - Gateway `client.js` (~540KB) is a bundled browser script injected into pages. Built by `build-client.mjs` using esbuild.
