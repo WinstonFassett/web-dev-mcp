@@ -225,7 +225,7 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
     'eval_capnweb',
     'Run JavaScript server-side with document/window as capnweb remote proxies to the browser DOM. Each property access or method call is an RPC round-trip. CSP-safe, multi-statement, supports await. A persistent `state` object survives across calls — store references in it (e.g. `state.el = document.querySelector("h1")`) and use them in subsequent calls. For accessing browser globals, framework state, or closures, use eval_in_browser instead.',
     {
-      code: z.string().describe('JavaScript code. `document` and `window` are capnweb remote proxies. `state` persists across calls — store element refs there. Use `await` to read values (e.g. `await el.textContent`). Return a value or use explicit `return`.'),
+      code: z.string().describe('JavaScript code. Available globals: `document`, `window` (capnweb remote proxies), `state` (persists across calls — store refs here), `browser` (helpers: `browser.markdown(selector?)`, `browser.screenshot(selector?)`, `browser.navigate(url)`, `browser.click(selector)`, `browser.fill(selector, value)`). Use `await` to read values. Return a value or use explicit `return`.'),
     },
     async (args, extra) => {
       const stub = getBrowserStub()
@@ -241,14 +241,24 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
         }
         const state = capnwebStates.get(sessionId)!
 
+        // browser object exposes BrowserApi helpers that aren't on document/window
+        const browser = {
+          markdown: (selector?: string) => (stub as any).getPageMarkdown(selector),
+          screenshot: (selector?: string) => (stub as any).screenshot(selector),
+          navigate: (url: string) => (stub as any).navigate(url),
+          click: (selector: string) => (stub as any).click(selector),
+          fill: (selector: string, value: string) => (stub as any).fill(selector, value),
+        }
+
         const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
-        const fn = new AsyncFunction('document', 'window', 'localStorage', 'sessionStorage', 'state', args.code)
+        const fn = new AsyncFunction('document', 'window', 'localStorage', 'sessionStorage', 'state', 'browser', args.code)
         const result = await fn(
           (stub as any).document,
           (stub as any).window,
           (stub as any).localStorage,
           (stub as any).sessionStorage,
           state,
+          browser,
         )
         const serialized = typeof result === 'string' ? result
           : result === undefined ? 'undefined'
