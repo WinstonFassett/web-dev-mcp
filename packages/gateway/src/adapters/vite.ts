@@ -23,16 +23,30 @@ export function webDevMcp(options: ViteAdapterOptions = {}): Plugin {
   let clientSource: string | undefined
   let devEventsWs: WebSocket | null = null
 
+  let gatewayWarned = false
+
   function connectDevEvents() {
     const wsUrl = gatewayUrl.replace(/^http/, 'ws') + '/__dev-events'
     devEventsWs = new WebSocket(wsUrl)
+
+    devEventsWs.on('open', () => {
+      if (gatewayWarned) {
+        console.log(`  [web-dev-mcp] Gateway connected at ${gatewayUrl}`)
+        gatewayWarned = false
+      }
+    })
 
     devEventsWs.on('close', () => {
       devEventsWs = null
       setTimeout(connectDevEvents, 3000)
     })
 
-    devEventsWs.on('error', () => {})
+    devEventsWs.on('error', () => {
+      if (!gatewayWarned) {
+        console.warn(`  [web-dev-mcp] Gateway not running. Start it with: npx web-dev-mcp-gateway`)
+        gatewayWarned = true
+      }
+    })
   }
 
   function sendBuildEvent(payload: any) {
