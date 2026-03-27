@@ -4,14 +4,15 @@
 node_modules/
 dist/
 .next/
-test-app/.claude/
-test-app/.cursor/
-test-app/.windsurf/
-test-app/src/*.js
 
 # MCP log directories
 .vite-mcp/
 .web-dev-mcp/
-.playwright-mcp/
 
+# IDE
 .vscode/settings.json
+
+# Example app IDE configs
+examples/*/.claude/
+examples/*/.cursor/
+examples/*/.windsurf/

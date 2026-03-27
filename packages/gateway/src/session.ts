@@ -6,11 +6,11 @@ import type { SessionInfo, GatewayOptions } from './types.js'
 
 const VERSION = '0.1.0'
 
-export function computeSessionId(target: string): string {
+function computeSessionId(target: string): string {
   return createHash('sha256').update(target).digest('hex').slice(0, 6)
 }
 
-export function getLogDir(target: string, options: GatewayOptions): string {
+function getLogDir(target: string, options: GatewayOptions): string {
   if (options.logDir) return options.logDir
   // Default to .web-dev-mcp/ in current directory instead of /tmp to avoid permissions issues
   return join(process.cwd(), '.web-dev-mcp')

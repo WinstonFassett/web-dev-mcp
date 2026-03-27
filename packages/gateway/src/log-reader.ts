@@ -3,7 +3,7 @@ import type { HarnessEvent, DiagnosticsResult, DiagnosticSummary, ConsolePayload
 import type { SessionState } from './session.js'
 import type { DevEventsWriter } from './writers/dev-events.js'
 
-export interface LogQuery {
+interface LogQuery {
   channel: string
   sinceId?: number
   limit?: number
@@ -11,7 +11,7 @@ export interface LogQuery {
   search?: string
 }
 
-export interface LogResult {
+interface LogResult {
   events: HarnessEvent[]
   total: number
   returned: number
@@ -72,7 +72,7 @@ export function queryLogs(files: Record<string, string>, query: LogQuery): LogRe
   }
 }
 
-export interface DiagnosticsQuery {
+interface DiagnosticsQuery {
   since_checkpoint?: boolean
   since_ts?: number
   limit?: number

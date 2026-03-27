@@ -59,7 +59,7 @@ function createWsTransport(ws: WsWebSocket): RpcTransport {
   }
 }
 
-export interface BrowserStub {
+interface BrowserStub {
   // Browser identity
   id: string
   getPageInfo(): Promise<{ id: string; title: string; url: string; type: string }>
@@ -100,57 +100,10 @@ export function getBrowserStub(): RpcStub<BrowserStub> | undefined {
   return getBrowserByAlias('latest')
 }
 
-export function getBrowserByAlias(alias: 'first' | 'latest'): RpcStub<BrowserStub> | undefined {
+function getBrowserByAlias(alias: 'first' | 'latest'): RpcStub<BrowserStub> | undefined {
   if (connectionOrder.length === 0) return undefined
   const connId = alias === 'first' ? connectionOrder[0] : connectionOrder[connectionOrder.length - 1]
   return browsers.get(connId)?.stub
-}
-
-export function getBrowserById(browserId: string): RpcStub<BrowserStub> | undefined {
-  for (const conn of browsers.values()) {
-    if (conn.browserId === browserId) return conn.stub
-  }
-  return undefined
-}
-
-export function getAllBrowsers(): Array<{ connId: string; browserId: string | null; connectedAt: number }> {
-  return Array.from(browsers.entries()).map(([connId, conn]) => ({
-    connId,
-    browserId: conn.browserId,
-    connectedAt: conn.connectedAt,
-  }))
-}
-
-export function getBrowserStubCount(): number {
-  return browsers.size
-}
-
-// Wait for a browser to connect (with timeout)
-export async function waitForBrowser(timeoutMs = 5000): Promise<RpcStub<BrowserStub>> {
-  const existing = getBrowserStub()
-  if (existing) return existing
-
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      cleanup()
-      reject(new Error('Timeout waiting for browser connection'))
-    }, timeoutMs)
-
-    const check = () => {
-      const stub = getBrowserStub()
-      if (stub) {
-        cleanup()
-        resolve(stub)
-      }
-    }
-
-    const interval = setInterval(check, 100)
-
-    const cleanup = () => {
-      clearTimeout(timeout)
-      clearInterval(interval)
-    }
-  })
 }
 
 export function setupRpcWebSocket(httpServer: { on(event: string, listener: (...args: any[]) => void): void }, rpcPath: string) {

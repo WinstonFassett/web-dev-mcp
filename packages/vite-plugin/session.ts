@@ -6,11 +6,11 @@ import type { SessionInfo, ViteLiveDevMcpOptions } from './types.js'
 
 const PLUGIN_VERSION = '0.1.0'
 
-export function computeSessionId(projectRoot: string): string {
+function computeSessionId(projectRoot: string): string {
   return createHash('sha256').update(projectRoot).digest('hex').slice(0, 6)
 }
 
-export function getLogDir(projectRoot: string, options: ViteLiveDevMcpOptions): string {
+function getLogDir(projectRoot: string, options: ViteLiveDevMcpOptions): string {
   if (options.logDir) return options.logDir
   // Default to project-relative .vite-mcp/ instead of /tmp to avoid permissions issues
   return join(projectRoot, '.vite-mcp')

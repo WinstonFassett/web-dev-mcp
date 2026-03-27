@@ -83,7 +83,7 @@ export interface SessionInfo {
   pluginVersion: string
 }
 
-export interface ComponentNode {
+interface ComponentNode {
   name: string
   depth: number
   props?: Record<string, string>

@@ -11,16 +11,11 @@
     "build": "npm run build --workspace=vite-live-dev-mcp && npm run build --workspace=web-dev-mcp-gateway",
     "dev": "npm run dev --workspaces",
     "test": "npm run test --workspaces",
-    "clean": "npm run clean --workspaces && rm -rf node_modules",
-    "cleanup": "./scripts/cleanup-dev-servers.sh"
+    "clean": "npm run clean --workspaces && rm -rf node_modules"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "@types/ws": "^8.18.1",
-    "playwright": "^1.58.2",
-    "typescript": "^5.8.0",
-    "vite": "^8.0.0",
-    "vitest": "^3.0.0"
+    "typescript": "^5.8.0"
   },
   "keywords": [
     "mcp",
