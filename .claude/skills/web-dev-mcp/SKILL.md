@@ -7,6 +7,8 @@ description: Live browser observability and control for frontend development. Us
 
 MCP tools for live browser interaction. Connected via SSE at `/__mcp/sse`.
 
+**This controls an already-open browser tab** — your dev app running in the browser. It is not a headless browser launcher. The browser must be open with the instrumented page loaded.
+
 ## Core workflow (test-fix loop)
 
 ```
@@ -58,8 +60,15 @@ click("#save-btn")             # by CSS selector
 fill("#email", "test@test.com")
 hover("text=Menu")
 press_key("Enter")
-navigate("http://localhost:3000/settings")
 ```
+
+### Navigation
+
+`navigate(url)` changes `window.location.href`. **This disconnects the RPC session** — the page unloads and the new page must reconnect. Wait a few seconds before the next tool call.
+
+For single-page app route changes (React Router, Next.js links), prefer `click("text=Settings")` on a navigation element instead — SPA routing doesn't reload the page, so the connection stays alive.
+
+If you need to drive browsing across full page loads without worrying about reconnection, use capnweb directly (see [RECIPES.md](RECIPES.md)) — it can open new windows and reconnect programmatically.
 
 ## Observing
 
@@ -69,8 +78,8 @@ navigate("http://localhost:3000/settings")
 
 ## Gotchas
 
-- After `navigate()`, browser reconnects RPC — wait before next call
 - `eval_in_browser` blocked by CSP on some sites — use `get_visible_text` or `query_dom` instead
-- `query_dom` includes hidden elements — if you need only visible content use `get_visible_text` or `get_page_markdown`
+- `query_dom` includes hidden elements — use `get_visible_text` or `get_page_markdown` for visible-only content
+- MCP tools are for simple actions on an existing tab. For complex multi-page flows or DOM traversal chains, see capnweb in [RECIPES.md](RECIPES.md).
 
 See [RECIPES.md](RECIPES.md) for common patterns.
