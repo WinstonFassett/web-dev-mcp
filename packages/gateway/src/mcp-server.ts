@@ -219,26 +219,36 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
     },
   )
 
+  // Uses module-level capnwebStates for persistent state per MCP session
+
   mcp.tool(
     'eval_capnweb',
-    'Run JavaScript server-side with document/window as capnweb remote proxies to the browser DOM. Each property access or method call is an RPC round-trip. CSP-safe, multi-statement, supports await. Use for DOM traversal chains and CSP-blocked sites. For accessing browser globals, framework state, or closures, use eval_in_browser instead.',
+    'Run JavaScript server-side with document/window as capnweb remote proxies to the browser DOM. Each property access or method call is an RPC round-trip. CSP-safe, multi-statement, supports await. A persistent `state` object survives across calls — store references in it (e.g. `state.el = document.querySelector("h1")`) and use them in subsequent calls. For accessing browser globals, framework state, or closures, use eval_in_browser instead.',
     {
-      code: z.string().describe('JavaScript code. `document` and `window` are capnweb remote proxies. Supports await — use it to read values (e.g. `await el.textContent`). Last expression or explicit `return` value is returned.'),
+      code: z.string().describe('JavaScript code. `document` and `window` are capnweb remote proxies. `state` persists across calls — store element refs there. Use `await` to read values (e.g. `await el.textContent`). Return a value or use explicit `return`.'),
     },
-    async (args) => {
+    async (args, extra) => {
       const stub = getBrowserStub()
       if (!stub) {
         return { content: [{ type: 'text' as const, text: JSON.stringify({ error: 'No browser connected' }) }], isError: true }
       }
       try {
         const start = Date.now()
+        // Get or create persistent state for this MCP session
+        const sessionId = extra.sessionId ?? '_default'
+        if (!capnwebStates.has(sessionId)) {
+          capnwebStates.set(sessionId, {})
+        }
+        const state = capnwebStates.get(sessionId)!
+
         const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
-        const fn = new AsyncFunction('document', 'window', 'localStorage', 'sessionStorage', args.code)
+        const fn = new AsyncFunction('document', 'window', 'localStorage', 'sessionStorage', 'state', args.code)
         const result = await fn(
           (stub as any).document,
           (stub as any).window,
           (stub as any).localStorage,
           (stub as any).sessionStorage,
+          state,
         )
         const serialized = typeof result === 'string' ? result
           : result === undefined ? 'undefined'
@@ -578,6 +588,9 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
 // Map of sessionId → { transport, server } for routing POST messages
 const connections = new Map<string, { transport: SSEServerTransport; server: McpServer }>()
 
+// Persistent state per MCP session for eval_capnweb — survives across tool calls
+const capnwebStates = new Map<string, Record<string, any>>()
+
 export function sendNotificationToAll(channel: string, message: string, file: string, hint: string): void {
   for (const { server } of connections.values()) {
     server.server.sendLoggingMessage({
@@ -605,6 +618,7 @@ export function createMcpMiddleware(
 
       transport.onclose = () => {
         connections.delete(transport.sessionId)
+        capnwebStates.delete(transport.sessionId)
         ctx.connectedClients = Math.max(0, ctx.connectedClients - 1)
       }
 
