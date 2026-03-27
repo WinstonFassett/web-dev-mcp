@@ -595,6 +595,29 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
     },
   )
 
+  mcp.tool(
+    'get_page_markdown',
+    'Convert page DOM to markdown with links, headings, and form elements. Useful for understanding page structure and finding clickable elements.',
+    {
+      selector: z.string().optional().describe('CSS selector for root element. Default: document body.'),
+    },
+    async (args) => {
+      const stub = getBrowserStub()
+      if (!stub) {
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: 'No browser connected' }) }], isError: true }
+      }
+      try {
+        const result = await (stub as any).getPageMarkdown(args.selector)
+        if ((result as any).error) {
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], isError: true }
+        }
+        return { content: [{ type: 'text' as const, text: (result as any).markdown }] }
+      } catch (err: any) {
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: err.message ?? String(err) }) }], isError: true }
+      }
+    },
+  )
+
   if (ctx.options.react) {
     mcp.tool(
       'get_react_tree',

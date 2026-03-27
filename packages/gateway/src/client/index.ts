@@ -532,6 +532,66 @@
           if (!el) return { error: 'Element not found: ' + selector }
           return { text: (el as HTMLElement).innerText, length: (el as HTMLElement).innerText.length }
         }
+
+        getPageMarkdown(selector?: string) {
+          const root = selector ? document.querySelector(selector) : document.body
+          if (!root) return { error: 'Element not found: ' + selector }
+
+          const SKIP = new Set(['script', 'style', 'noscript', 'svg', 'link', 'meta', 'head'])
+          const BLOCK = new Set(['div', 'p', 'section', 'article', 'main', 'header', 'footer', 'nav',
+            'li', 'tr', 'td', 'th', 'blockquote', 'pre', 'figure', 'figcaption', 'details', 'summary'])
+
+          function walk(node: Node): string {
+            if (node.nodeType === 3) return node.textContent || ''
+            if (node.nodeType !== 1) return ''
+            const el = node as HTMLElement
+            const tag = el.tagName.toLowerCase()
+            if (SKIP.has(tag)) return ''
+            if (el.hidden || el.getAttribute('aria-hidden') === 'true') return ''
+            const style = window.getComputedStyle(el)
+            if (style.display === 'none' || style.visibility === 'hidden') return ''
+
+            let inner = ''
+            for (const child of el.childNodes) inner += walk(child)
+            inner = inner.replace(/\n{3,}/g, '\n\n')
+
+            if (tag === 'a') {
+              const href = el.getAttribute('href')
+              const text = inner.trim()
+              if (!text) return ''
+              if (href) return '[' + text + '](' + href + ')'
+              return text
+            }
+            if (tag === 'img') return '![' + (el.getAttribute('alt') || '') + '](' + (el.getAttribute('src') || '') + ')'
+            if (tag === 'br') return '\n'
+            if (tag === 'hr') return '\n---\n'
+            if (/^h[1-6]$/.test(tag)) return '\n' + '#'.repeat(parseInt(tag[1])) + ' ' + inner.trim() + '\n'
+            if (tag === 'li') {
+              const parent = el.parentElement?.tagName.toLowerCase()
+              const prefix = parent === 'ol' ? (Array.from(el.parentElement!.children).indexOf(el) + 1) + '. ' : '- '
+              return prefix + inner.trim() + '\n'
+            }
+            if (tag === 'pre') return '\n```\n' + el.textContent + '\n```\n'
+            if (tag === 'code') return '`' + inner.trim() + '`'
+            if (tag === 'strong' || tag === 'b') return '**' + inner.trim() + '**'
+            if (tag === 'em' || tag === 'i') return '*' + inner.trim() + '*'
+            if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') {
+              let desc = tag
+              if ((el as HTMLInputElement).type) desc += '[' + (el as HTMLInputElement).type + ']'
+              if ((el as HTMLInputElement).placeholder) desc += ' placeholder="' + (el as HTMLInputElement).placeholder + '"'
+              if ((el as HTMLInputElement).value) desc += ' value="' + (el as HTMLInputElement).value + '"'
+              if (el.id) desc += ' #' + el.id
+              if (tag === 'button') desc += ': ' + inner.trim()
+              return '<' + desc + '>'
+            }
+            if (BLOCK.has(tag)) return '\n' + inner + '\n'
+            return inner
+          }
+
+          let md = walk(root).replace(/\n{3,}/g, '\n\n').trim()
+          if (md.length > 30000) md = md.slice(0, 30000) + '\n\n...(truncated)'
+          return { markdown: md, length: md.length }
+        }
       }
 
       // Connect RPC to gateway (may be cross-origin)

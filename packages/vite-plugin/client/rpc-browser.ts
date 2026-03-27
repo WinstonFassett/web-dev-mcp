@@ -291,6 +291,76 @@ class BrowserApi extends RpcTarget {
     return { text: el.innerText, length: el.innerText.length }
   }
 
+  // Convert page DOM to markdown with links and structure
+  getPageMarkdown(selector) {
+    var root = selector ? document.querySelector(selector) : document.body
+    if (!root) return { error: 'Element not found: ' + selector }
+
+    var SKIP = new Set(['script', 'style', 'noscript', 'svg', 'link', 'meta', 'head'])
+    var BLOCK = new Set(['div', 'p', 'section', 'article', 'main', 'header', 'footer', 'nav',
+      'li', 'tr', 'td', 'th', 'blockquote', 'pre', 'figure', 'figcaption', 'details', 'summary'])
+
+    function walk(node) {
+      if (node.nodeType === 3) return node.textContent || ''
+      if (node.nodeType !== 1) return ''
+      var el = node
+      var tag = el.tagName.toLowerCase()
+      if (SKIP.has(tag)) return ''
+      if (el.hidden || el.getAttribute('aria-hidden') === 'true') return ''
+      var style = window.getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden') return ''
+
+      var inner = ''
+      for (var child of el.childNodes) inner += walk(child)
+      inner = inner.replace(/\n{3,}/g, '\n\n')
+
+      if (tag === 'a') {
+        var href = el.getAttribute('href')
+        var text = inner.trim()
+        if (!text) return ''
+        if (href) return '[' + text + '](' + href + ')'
+        return text
+      }
+      if (tag === 'img') {
+        var alt = el.getAttribute('alt') || ''
+        var src = el.getAttribute('src') || ''
+        return '![' + alt + '](' + src + ')'
+      }
+      if (tag === 'br') return '\n'
+      if (tag === 'hr') return '\n---\n'
+      if (/^h[1-6]$/.test(tag)) {
+        var level = parseInt(tag[1])
+        return '\n' + '#'.repeat(level) + ' ' + inner.trim() + '\n'
+      }
+      if (tag === 'li') {
+        var parent = el.parentElement?.tagName.toLowerCase()
+        var prefix = parent === 'ol' ? (Array.from(el.parentElement.children).indexOf(el) + 1) + '. ' : '- '
+        return prefix + inner.trim() + '\n'
+      }
+      if (tag === 'pre' || tag === 'code') {
+        if (tag === 'pre') return '\n```\n' + el.textContent + '\n```\n'
+        return '`' + inner.trim() + '`'
+      }
+      if (tag === 'strong' || tag === 'b') return '**' + inner.trim() + '**'
+      if (tag === 'em' || tag === 'i') return '*' + inner.trim() + '*'
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') {
+        var desc = tag
+        if (el.type) desc += '[' + el.type + ']'
+        if (el.placeholder) desc += ' placeholder="' + el.placeholder + '"'
+        if (el.value) desc += ' value="' + el.value + '"'
+        if (el.id) desc += ' #' + el.id
+        if (tag === 'button') desc += ': ' + inner.trim()
+        return '<' + desc + '>'
+      }
+      if (BLOCK.has(tag)) return '\n' + inner + '\n'
+      return inner
+    }
+
+    var md = walk(root).replace(/\n{3,}/g, '\n\n').trim()
+    if (md.length > 30000) md = md.slice(0, 30000) + '\n\n...(truncated)'
+    return { markdown: md, length: md.length }
+  }
+
   // Keep eval for backward compat — serializes result to string
   eval(expression) {
     const fn = new Function('return (' + expression + ')')
