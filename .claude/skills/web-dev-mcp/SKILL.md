@@ -38,6 +38,8 @@ Runs JavaScript on the server with `document` and `window` as live capnweb remot
 |---|---|
 | `document` | Remote DOM proxy. querySelector, textContent, click, etc. |
 | `window` | Remote window proxy. location, localStorage, etc. |
+| `state` | Persists across calls. Store capnweb refs to runtime objects (stores, globals). |
+| `browser.eval(expression)` | Run JS directly in browser (access framework internals, closures). |
 | `browser.markdown(selector?)` | Element/page to markdown with `[links](urls)` |
 | `browser.screenshot(selector?)` | PNG screenshot |
 | `browser.navigate(url)` | Change page (disconnects RPC, wait before next call) |
@@ -94,6 +96,16 @@ const link = document.querySelector('a[href*="doom"]')
 const row = link.closest('tr').nextElementSibling
 const href = await row.querySelector('a:last-child').href
 return href
+```
+
+**Hold a ref across calls (stores, globals):**
+```js
+// Call 1: store a ref
+state.store = window.__REDUX_STORE__
+return await state.store.getState()
+
+// Call 2 (later): same ref, still alive
+return await state.store.getState()
 ```
 
 ## Gotchas

@@ -113,23 +113,24 @@ console.log(await page2.document.title)
 page2.close()
 ```
 
-## Packages
+## Install
 
-| Package | Purpose |
-|---|---|
-| `web-dev-mcp-gateway` | Universal gateway — proxy, MCP server, capnweb routing |
-| `vite-live-dev-mcp` | Vite plugin — embedded MCP server + HMR integration |
+One package: `web-dev-mcp-gateway`. Dev dependency only.
 
-### Vite Plugin
+```bash
+npm install --save-dev web-dev-mcp-gateway
+```
+
+### Vite
 
 ```ts
 // vite.config.ts
-import { viteLiveDevMcp } from 'vite-live-dev-mcp'
+import { webDevMcp } from 'web-dev-mcp-gateway/vite'
 
 export default defineConfig({
   plugins: [
     react(),
-    viteLiveDevMcp({ network: true }),
+    webDevMcp(),
   ],
 })
 ```
@@ -140,13 +141,29 @@ export default defineConfig({
 // next.config.js
 import { withWebDevMcp } from 'web-dev-mcp-gateway/nextjs'
 
-export default withWebDevMcp(nextConfig, {
-  gatewayUrl: 'http://localhost:3333',
-  network: true,
-})
+export default withWebDevMcp(nextConfig)
 ```
 
-Start the gateway and Next.js. The adapter injects instrumentation via webpack and routes MCP/RPC to the gateway through Next.js rewrites.
+For Turbopack, also add the client component to your layout:
+
+```tsx
+// app/WebDevMcpInit.tsx
+'use client'
+import './web-dev-mcp-instrument.js'  // copy from examples/nextjs-app/app/
+export function WebDevMcpInit() { return null }
+
+// app/layout.tsx
+import { WebDevMcpInit } from './WebDevMcpInit'
+// ... add <WebDevMcpInit /> inside <body>
+```
+
+### Then start the gateway
+
+```bash
+npx web-dev-mcp-gateway
+```
+
+Both frameworks need the gateway running. It's a lightweight daemon on `:3333`.
 
 ## Gateway modes
 
