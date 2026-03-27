@@ -1,4 +1,4 @@
-import { RpcSession, RpcTarget, type RpcTransport, type RpcStub } from 'capnweb'
+import { RpcSession, type RpcTransport, type RpcStub } from 'capnweb'
 import { WebSocketServer, type WebSocket as WsWebSocket } from 'ws'
 
 // Adapt ws WebSocket to capnweb's RpcTransport
@@ -63,11 +63,6 @@ export interface BrowserStub {
   // Browser identity
   id: string
   getPageInfo(): Promise<{ id: string; title: string; url: string; type: string }>
-
-  // CDP via Chobitsu
-  cdpConnect(callback: RpcTarget): Promise<boolean>
-  cdpSend(message: string): Promise<void>
-  cdpDisconnect(): Promise<void>
 
   // Browser interaction
   screenshot(selector?: string): Promise<{ data: string; width: number; height: number } | { error: string }>

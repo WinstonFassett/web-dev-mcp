@@ -239,10 +239,7 @@
 
   // --- capnweb RPC (for eval/queryDom/getReactTree from server) ---
   import('capnweb').then(({ RpcTarget, newWebSocketRpcSession }) => {
-    // @ts-ignore
-    import('chobitsu').then((chobitsuModule) => {
-      const chobitsu = chobitsuModule.default || chobitsuModule
-
+    {
       const BROWSER_ID_KEY = '__web_dev_mcp_browser_id__'
       function getBrowserId() {
         let id = sessionStorage.getItem(BROWSER_ID_KEY)
@@ -330,25 +327,6 @@
 
         getPageInfo() {
           return { id: browserId, title: document.title, url: window.location.href, type: 'page' }
-        }
-
-        #cdpCallback: any = null
-
-        cdpConnect(callback: any) {
-          this.#cdpCallback = callback
-          chobitsu.setOnMessage((message: string) => {
-            if (this.#cdpCallback) this.#cdpCallback.send(message)
-          })
-          return true
-        }
-
-        cdpSend(message: string) {
-          chobitsu.sendRawMessage(message)
-        }
-
-        cdpDisconnect() {
-          this.#cdpCallback = null
-          chobitsu.setOnMessage(() => {})
         }
 
         get document() { return new AnyTarget(document) }
@@ -645,7 +623,7 @@
       } catch (err) {
         originalConsole.warn('[web-dev-mcp] RPC connection failed:', err)
       }
-    })
+    }
   }).catch((err: any) => {
     originalConsole.warn('[web-dev-mcp] Could not load RPC modules:', err)
   })

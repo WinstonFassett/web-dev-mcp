@@ -61,9 +61,6 @@ function createWsTransport(ws: WsWebSocket): RpcTransport {
 export interface BrowserStub {
   id: string
   getPageInfo(): Promise<{ id: string; title: string; url: string; type: string }>
-  cdpConnect(callback: RpcTarget): Promise<boolean>
-  cdpSend(message: string): Promise<void>
-  cdpDisconnect(): Promise<void>
   // Browser interaction
   screenshot(selector?: string): Promise<{ data: string; width: number; height: number } | { error: string }>
   click(selector: string): Promise<{ clicked: string; tag: string } | { error: string }>

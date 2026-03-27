@@ -20,7 +20,7 @@ graph LR
 ### 1. Start the gateway
 
 ```bash
-npx web-dev-mcp
+npx web-dev-mcp-gateway
 ```
 
 ### 2. Open any site through it
@@ -29,10 +29,10 @@ Browse `http://localhost:3333/https://news.ycombinator.com/` — the gateway pro
 
 ```bash
 # Vite
-npx web-dev-mcp --target http://localhost:5173
+npx web-dev-mcp-gateway --target http://localhost:5173
 
 # Or hub mode — Next.js/Vite connect to gateway via adapters
-npx web-dev-mcp
+npx web-dev-mcp-gateway
 ```
 
 ### 3. Connect your agent
@@ -136,7 +136,7 @@ export default withWebDevMcp(nextConfig, {
 })
 ```
 
-Start the gateway (`npx web-dev-mcp`) and Next.js (`npm run dev`). The adapter injects instrumentation via webpack and routes MCP/RPC to the gateway through Next.js rewrites.
+Start the gateway (`npx web-dev-mcp-gateway`) and Next.js (`npm run dev`). The adapter injects instrumentation via webpack and routes MCP/RPC to the gateway through Next.js rewrites.
 
 ## Gateway modes
 
@@ -146,10 +146,10 @@ Start the gateway (`npx web-dev-mcp`) and Next.js (`npm run dev`). The adapter i
 
 ```bash
 # Proxy mode
-npx web-dev-mcp --target http://localhost:3000
+npx web-dev-mcp-gateway --target http://localhost:3000
 
 # Hub mode
-npx web-dev-mcp
+npx web-dev-mcp-gateway
 
 # Hub + dynamic proxy
 # Just browse: http://localhost:3333/https://example.com/

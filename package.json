@@ -8,7 +8,7 @@
     "examples/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build --workspace=vite-live-dev-mcp && npm run build --workspace=web-dev-mcp-gateway",
     "dev": "npm run dev --workspaces",
     "test": "npm run test --workspaces",
     "clean": "npm run clean --workspaces && rm -rf node_modules",

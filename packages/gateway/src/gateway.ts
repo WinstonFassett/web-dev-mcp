@@ -16,7 +16,6 @@ import { NetworkWriter } from './writers/network.js'
 import { DevEventsWriter, type BuildEventPayload } from './writers/dev-events.js'
 import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './mcp-server.js'
 import { setupRpcWebSocket, setupAgentRpcWebSocket } from './rpc-server.js'
-import { createCdpMiddleware, setupCdpWebSocket, type CdpContext } from './cdp-server.js'
 import { autoRegister } from './auto-register.js'
 import { ServerRegistry, type RegisteredServer } from './registry.js'
 
@@ -188,9 +187,6 @@ export async function startGateway(options: GatewayOptions) {
     writers.network = new NetworkWriter(session.files.network, options.maxFileSizeMb)
   }
 
-  // CDP context
-  const cdpCtx: CdpContext = { serverUrl }
-
   // MCP context
   const mcpCtx: McpContext = {
     session,
@@ -200,7 +196,6 @@ export async function startGateway(options: GatewayOptions) {
   }
 
   const mcpMiddleware = createMcpMiddleware(mcpPath, mcpCtx)
-  const cdpMiddleware = createCdpMiddleware(cdpCtx)
 
   // Request handler
   function handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -297,15 +292,6 @@ export async function startGateway(options: GatewayOptions) {
     if (url.startsWith(mcpPath)) {
       addCorsHeaders(res)
       mcpMiddleware(req, res, () => {
-        res.writeHead(404)
-        res.end('Not found')
-      })
-      return
-    }
-
-    // CDP endpoints
-    if (url.startsWith('/__cdp')) {
-      cdpMiddleware(req, res, () => {
         res.writeHead(404)
         res.end('Not found')
       })
@@ -416,9 +402,6 @@ export async function startGateway(options: GatewayOptions) {
   setupRpcWebSocket(server, '/__rpc')
   setupAgentRpcWebSocket(server, '/__rpc/agent')
 
-  // Setup CDP WebSocket
-  setupCdpWebSocket(server, cdpCtx)
-
   // Upgrade handler for events + dev-events + proxy WS
   server.on('upgrade', (request: http.IncomingMessage, socket: any, head: Buffer) => {
     const url = request.url ?? ''
@@ -433,8 +416,6 @@ export async function startGateway(options: GatewayOptions) {
       })
     } else if (url === '/__rpc' || url.startsWith('/__rpc?') || url.startsWith('/__rpc/agent')) {
       // Handled by setupRpcWebSocket / setupAgentRpcWebSocket upgrade listeners
-    } else if (url.startsWith('/__cdp/devtools/')) {
-      // Handled by setupCdpWebSocket's own upgrade listener
     } else if (proxy) {
       // Proxy WebSocket to target
       proxy.ws(request, socket, head)
@@ -505,7 +486,6 @@ export async function startGateway(options: GatewayOptions) {
       console.log(`  Mode:    hub (no proxy target)`)
     }
     console.log(`  MCP:     ${proto}://localhost:${port}${mcpPath}/sse`)
-    console.log(`  CDP:     ${proto}://localhost:${port}/__cdp`)
     console.log(`  Logs:    ${session.logDir}`)
     if (useHttps) console.log(`  HTTPS:   enabled`)
     console.log('')

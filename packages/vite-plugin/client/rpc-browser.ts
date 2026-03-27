@@ -4,7 +4,6 @@
 // NOTE: This is a virtual module — must be valid JavaScript (no TS syntax).
 
 import { RpcTarget, newWebSocketRpcSession } from 'capnweb'
-import chobitsu from 'chobitsu'
 
 // Global variables injected by gateway
 // @ts-ignore — window.__WEB_DEV_MCP_SERVER__ set by gateway
@@ -147,28 +146,6 @@ class BrowserApi extends RpcTarget {
       url: window.location.href,
       type: 'page',
     }
-  }
-
-  // CDP via Chobitsu — connect callback for responses, returns disconnect function
-  #cdpCallback = null
-
-  cdpConnect(callback) {
-    this.#cdpCallback = callback
-    chobitsu.setOnMessage(message => {
-      if (this.#cdpCallback) {
-        this.#cdpCallback.send(message)
-      }
-    })
-    return true
-  }
-
-  cdpSend(message) {
-    chobitsu.sendRawMessage(message)
-  }
-
-  cdpDisconnect() {
-    this.#cdpCallback = null
-    chobitsu.setOnMessage(() => {})
   }
 
   // Expose document and window directly via AnyTarget proxy

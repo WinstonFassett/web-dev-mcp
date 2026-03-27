@@ -16,7 +16,7 @@
   },
   "files": [
     "dist",
-    "src/client"
+    "client"
   ],
   "scripts": {
     "build": "tsc",
@@ -29,6 +29,11 @@
     "ai",
     "devtools"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anthropics/web-dev-mcp.git",
+    "directory": "packages/vite-plugin"
+  },
   "license": "MIT",
   "peerDependencies": {
     "bippy": ">=0.5.0",
@@ -42,7 +47,6 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.0",
     "capnweb": "^0.6.1",
-    "chobitsu": "^1.8.6",
     "ws": "^8.20.0"
   },
   "devDependencies": {
