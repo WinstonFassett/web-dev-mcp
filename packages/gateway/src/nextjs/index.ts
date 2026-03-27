@@ -41,8 +41,8 @@ export function withWebDevMcp(
           // Inject our instrument file at the start of each entry
           Object.keys(entries).forEach((key) => {
             const entry = entries[key]
-            if (Array.isArray(entry) && !entry.includes('web-dev-mcp/nextjs/instrument')) {
-              entries[key] = ['web-dev-mcp/nextjs/instrument', ...entry]
+            if (Array.isArray(entry) && !entry.includes('web-dev-mcp-gateway/nextjs/instrument')) {
+              entries[key] = ['web-dev-mcp-gateway/nextjs/instrument', ...entry]
             }
           })
 
