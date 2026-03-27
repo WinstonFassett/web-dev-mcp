@@ -1,8 +1,6 @@
-import { WebDevMcpInit } from './WebDevMcpInit'
-
 export const metadata = {
-  title: 'Next.js MCP Test App',
-  description: 'Testing next-live-dev-mcp',
+  title: 'Next.js MCP Test App (webpack)',
+  description: 'Testing web-dev-mcp-gateway with webpack mode',
 }
 
 export default function RootLayout({
@@ -13,7 +11,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <WebDevMcpInit />
         {children}
       </body>
     </html>
