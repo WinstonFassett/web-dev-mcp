@@ -7,8 +7,7 @@ await build({
   platform: 'browser',
   target: 'es2022',
   outfile: 'dist/client.js',
-  minify: false, // Keep readable for debugging
-  sourcemap: 'inline',
+  minify: true,
 })
 
 console.log('Client bundle built → dist/client.js')
