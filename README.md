@@ -49,39 +49,39 @@ Add to `.mcp.json`:
 
 ## MCP Tools (core)
 
-Three tools. `eval_capnweb` does most of the work.
+Three tools. `eval_js_rpc` does most of the work.
 
 **`get_diagnostics`** — server-side console logs + errors + network + HMR/build status in one call. Use `since_checkpoint: true` after `clear` for clean reads.
 
 **`clear`** — reset logs and/or capnweb session state. Call before a code change.
 
-**`eval_capnweb`** — run JavaScript server-side with `document` and `window` as [capnweb](https://blog.cloudflare.com/capnweb-javascript-rpc-library/) remote proxies to the browser. CSP-safe, multi-statement, supports await. Persistent `state` object survives across calls.
+**`eval_js_rpc`** — run JavaScript server-side with `document` and `window` as [capnweb](https://blog.cloudflare.com/capnweb-javascript-rpc-library/) remote proxies to the browser. CSP-safe, multi-statement, supports await. Persistent `state` object survives across calls.
 
 ```js
 // Read the page as markdown
-eval_capnweb: return await browser.markdown('#main')
+eval_js_rpc: return await browser.markdown('#main')
 
 // Click by visible text
-eval_capnweb: await browser.click('text=Submit')
+eval_js_rpc: await browser.click('text=Submit')
 
 // Fill a form
-eval_capnweb: await browser.fill('#email', 'test@example.com')
+eval_js_rpc: await browser.fill('#email', 'test@example.com')
 
 // Take a screenshot
-eval_capnweb: return await browser.screenshot('#my-component')
+eval_js_rpc: return await browser.screenshot('#my-component')
 
 // DOM traversal chain
-eval_capnweb: |
+eval_js_rpc: |
   const link = document.querySelector('a[href*="doom"]')
   const row = link.closest('tr').nextElementSibling
   return await row.querySelector('a:last-child').href
 
 // Store refs across calls
-eval_capnweb: state.heading = document.querySelector('h1'); return await state.heading.textContent
-eval_capnweb: return await state.heading.getAttribute('class')
+eval_js_rpc: state.heading = document.querySelector('h1'); return await state.heading.textContent
+eval_js_rpc: return await state.heading.getAttribute('class')
 
 // Wait for async UI
-eval_capnweb: |
+eval_js_rpc: |
   await browser.click('text=Load')
   const el = await browser.waitFor('.success-toast', 100, 5000)
   return await el.textContent

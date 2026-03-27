@@ -28,7 +28,7 @@ clear                                        # truncate all log channels
 clear({ channels: ["console"] })             # truncate specific channel
 ```
 
-### `eval_capnweb`
+### `eval_js_rpc`
 
 Runs JavaScript on the server with `document` and `window` as live capnweb remote proxies to the browser. Each DOM call is an RPC round-trip. CSP-safe, multi-statement, supports await.
 
@@ -52,7 +52,7 @@ clear
 # make code change — HMR reloads
 get_diagnostics({ since_checkpoint: true })
 # check errors, then visual:
-eval_capnweb: return await browser.screenshot()
+eval_js_rpc: return await browser.screenshot()
 ```
 
 ## Examples

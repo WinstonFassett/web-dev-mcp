@@ -76,11 +76,13 @@ A capnweb import ID. When you call `document.querySelector('h1')`, the browser c
 
 Import IDs are scoped to the capnweb session. WebSocket session = persistent IDs. HTTP batch = IDs live for one request.
 
-## What eval_capnweb does internally
+## What eval_js_rpc does internally
 
-The `eval_capnweb` MCP tool runs your JS code on the server. `document` and `window` in that code are capnweb stubs from the gateway's persistent WebSocket to the browser. The gateway holds the session — your code runs against it, returns a result, and the intermediate refs are released.
+The `eval_js_rpc` MCP tool runs your JS code on the server. `document` and `window` in that code are capnweb stubs from the gateway's persistent WebSocket to the browser.
 
-If you need to hold refs across multiple interactions, use the WebSocket transport directly instead of eval_capnweb.
+A `state` object persists across calls within the same MCP session. Store capnweb proxy refs there to hold them: `state.store = window.__REDUX_STORE__`. The proxy stays alive because the gateway's WebSocket session stays alive. Use this for JS runtime objects (stores, globals) that survive HMR.
+
+DOM element refs in `state` will go stale after page reload — re-query those by selector.
 
 ## Browser reconnection
 
@@ -96,7 +98,7 @@ This affects both transports. A held ref to `<h1>` is meaningless after the page
 
 | Scenario | Transport |
 |---|---|
-| Quick read/click from MCP tool | `eval_capnweb` (MCP) |
+| Quick read/click from MCP tool | `eval_js_rpc` (MCP) |
 | Multi-step DOM exploration with held refs | WebSocket (`/__rpc/agent`) |
 | CI/CD automation, one-shot queries | HTTP batch (`/__rpc/batch`) |
 | Custom agent scripts | WebSocket via `connect()` helper |
