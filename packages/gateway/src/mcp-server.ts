@@ -220,6 +220,43 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
   )
 
   mcp.tool(
+    'eval_capnweb',
+    'Run JavaScript server-side with document/window as capnweb remote proxies to the browser DOM. Each property access or method call is an RPC round-trip. CSP-safe, multi-statement, supports await. Use for DOM traversal chains and CSP-blocked sites. For accessing browser globals, framework state, or closures, use eval_in_browser instead.',
+    {
+      code: z.string().describe('JavaScript code. `document` and `window` are capnweb remote proxies. Supports await — use it to read values (e.g. `await el.textContent`). Last expression or explicit `return` value is returned.'),
+    },
+    async (args) => {
+      const stub = getBrowserStub()
+      if (!stub) {
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: 'No browser connected' }) }], isError: true }
+      }
+      try {
+        const start = Date.now()
+        const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
+        const fn = new AsyncFunction('document', 'window', 'localStorage', 'sessionStorage', args.code)
+        const result = await fn(
+          (stub as any).document,
+          (stub as any).window,
+          (stub as any).localStorage,
+          (stub as any).sessionStorage,
+        )
+        const serialized = typeof result === 'string' ? result
+          : result === undefined ? 'undefined'
+          : result === null ? 'null'
+          : JSON.stringify(result, null, 2)
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ result: serialized, duration_ms: Date.now() - start }, null, 2) }],
+        }
+      } catch (err: any) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: err.message ?? String(err) }) }],
+          isError: true,
+        }
+      }
+    },
+  )
+
+  mcp.tool(
     'get_logs',
     'Query log files with filtering and pagination.',
     {
