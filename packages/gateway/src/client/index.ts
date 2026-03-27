@@ -453,15 +453,45 @@
           }
         }
 
+        // Find element by CSS selector or "text=..." for text content search
+        findElement(selector: string): HTMLElement | null {
+          if (selector.startsWith('text=')) {
+            const search = selector.slice(5)
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
+            let node: Node | null
+            while (node = walker.nextNode()) {
+              const el = node as HTMLElement
+              const directText = Array.from(el.childNodes)
+                .filter(n => n.nodeType === 3)
+                .map(n => (n.textContent || '').trim())
+                .join(' ')
+              if (directText && directText.includes(search)) return el
+            }
+            const walker2 = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
+            while (node = walker2.nextNode()) {
+              if ((node as HTMLElement).textContent?.includes(search)) {
+                const children = (node as HTMLElement).querySelectorAll('*')
+                for (let i = children.length - 1; i >= 0; i--) {
+                  if (children[i].textContent?.trim().includes(search) &&
+                      children[i].children.length === 0) return children[i] as HTMLElement
+                }
+                return node as HTMLElement
+              }
+            }
+            return null
+          }
+          return document.querySelector(selector) as HTMLElement | null
+        }
+
         click(selector: string) {
-          const el = document.querySelector(selector) as HTMLElement | null
+          const el = this.findElement(selector)
           if (!el) return { error: 'Element not found: ' + selector }
           el.click()
           return { clicked: selector, tag: el.tagName.toLowerCase() }
         }
 
         fill(selector: string, value: string) {
-          const el = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement | null
+          const el = this.findElement(selector) as HTMLInputElement | HTMLTextAreaElement | null
           if (!el) return { error: 'Element not found: ' + selector }
           const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
             HTMLInputElement.prototype, 'value'
@@ -479,7 +509,7 @@
         }
 
         selectOption(selector: string, value: string) {
-          const el = document.querySelector(selector) as HTMLSelectElement | null
+          const el = this.findElement(selector) as HTMLSelectElement | null
           if (!el || el.tagName !== 'SELECT') return { error: 'Select element not found: ' + selector }
           const options = Array.from(el.options)
           const option = options.find(o => o.value === value) || options.find(o => o.textContent?.trim() === value)
@@ -490,7 +520,7 @@
         }
 
         hover(selector: string) {
-          const el = document.querySelector(selector)
+          const el = this.findElement(selector)
           if (!el) return { error: 'Element not found: ' + selector }
           el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
           el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))

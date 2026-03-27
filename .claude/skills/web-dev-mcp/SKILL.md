@@ -1,57 +1,49 @@
 ---
 name: web-dev-mcp
-description: Interact with live browsers via MCP tools or capnweb remote DOM. Use when testing UI, debugging frontend, reading page content, clicking elements, filling forms, or navigating web apps during development.
+description: Live browser observability and control for frontend development. Use when testing UI changes, debugging console errors, checking HMR status, taking screenshots, clicking elements, filling forms, or reading page content during local development.
 ---
 
 # web-dev-mcp
 
-Live browser observability and interaction for AI agents. Two interfaces:
+MCP tools for live browser interaction during frontend development. Connected via SSE at `/__mcp/sse`.
 
-## 1. MCP Tools (high-level)
+## Core workflow (test-fix loop)
 
-Connect via SSE at `/__mcp/sse`. Best for: diagnostics, screenshots, page reading.
-
-**Start here:**
-- `get_page_markdown` — page as markdown with `[link text](url)`. Best way to read a page.
-- `get_diagnostics` — console logs + errors + HMR status in one call
-- `screenshot` — full page or element PNG
-
-**Interact:**
-- `click(selector)` / `fill(selector, value)` / `navigate(url)`
-- `query_dom(selector)` — HTML snapshot with configurable depth
-
-**Observe:**
-- `clear_logs` then `get_diagnostics(since_checkpoint: true)` — see only new events after a code change
-
-## 2. capnweb Agent Client (live remote DOM)
-
-Connect via WebSocket at `/__rpc/agent`. Best for: DOM traversal, chaining, CSP-blocked sites.
-
-```js
-import { connect } from 'web-dev-mcp-gateway/agent'
-
-const browser = await connect('ws://localhost:3333/__rpc/agent')
-const { document } = browser
-
-// Chain DOM calls — pipelined into minimal round trips
-const title = await document.querySelector('h1').textContent
-const link = document.querySelector('a.nav').closest('li').nextElementSibling.querySelector('a')
-const href = await link.href
-await link.click()
-
-// After navigation, reconnect (page reload breaks RPC)
-browser.close()
-const page2 = await connect('ws://localhost:3333/__rpc/agent')
+```
+clear_logs                                    # reset checkpoint
+(make code change — HMR reloads automatically)
+get_diagnostics({ since_checkpoint: true })    # errors? warnings? only new events
+screenshot({ selector: '#my-component' })      # visual check
 ```
 
-No eval. No CSP issues. Full DOM API via remote proxies.
+## Reading the page
 
-## Recipes
+- `query_dom({ selector, max_depth })` — HTML snapshot. See structure, classes, IDs. **Best for dev.**
+- `get_visible_text(selector)` — plain rendered text
+- `get_page_markdown(selector)` — markdown with `[link text](url)`. Best for content/link discovery.
+- `screenshot(selector)` — visual PNG
 
-See [RECIPES.md](RECIPES.md) for common patterns.
+All accept an optional `selector` to scope to an element.
+
+## Interacting
+
+All selectors support CSS or `text=` prefix for text matching:
+
+- `click("text=Submit")` — click by visible text
+- `click("#save-btn")` — click by CSS selector
+- `fill("#email", "test@example.com")` — fill input
+- `hover("text=Menu")` — hover by text
+- `navigate(url)` — go to URL
+- `press_key("Enter")` — keyboard input
+
+## Observing
+
+- `get_diagnostics` — console + errors + network + HMR in one call. Use `since_checkpoint: true` after `clear_logs`.
+- `get_hmr_status` — lightweight poll for HMR state
+- `get_logs({ channel, search, level })` — granular log queries
 
 ## Gotchas
 
-- `eval_in_browser` uses `new Function()` — blocked by CSP on many sites. Use `get_page_markdown` or capnweb instead.
-- After `navigate()`, browser reconnects RPC. Agent must reconnect too (new `connect()` call).
-- `click(selector)` needs a CSS selector. If you only have text, use `get_page_markdown` to find the element's context, then construct a selector.
+- `eval_in_browser` uses `new Function()` — may be blocked by CSP. Prefer `query_dom` or `get_visible_text`.
+- After `navigate()`, browser reconnects RPC. Wait a moment before next tool call.
+- For complex DOM traversal, see [RECIPES.md](RECIPES.md) for capnweb patterns.

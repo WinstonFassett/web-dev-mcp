@@ -1,84 +1,109 @@
 # Recipes
 
-## Read a page and find a link
+## Local Development
+
+### Test-fix loop
 
 ```
-1. get_page_markdown()
-2. Parse markdown — links appear as [text](url)
-3. navigate({ url: "the-url-you-found" })
+clear_logs
+# make code change, HMR reloads
+get_diagnostics({ since_checkpoint: true })
+# check summary: error_count, warning_count, failed_requests
+screenshot({ selector: '#root' })
+# repeat
 ```
 
-Agent sees: `[60 comments](item?id=47490705)` — extract the URL, navigate to it.
-
-## Test-fix loop
+### Verify a component renders correctly
 
 ```
-1. clear_logs()
-2. (make code change — HMR auto-reloads)
-3. get_diagnostics({ since_checkpoint: true })
-4. Check: errors? warnings? failed requests?
-5. screenshot({ selector: '#my-component' })
-6. Repeat
+query_dom({ selector: '#my-component', max_depth: 3 })
+# see HTML structure, check classes, attributes
+screenshot({ selector: '#my-component' })
+# visual confirmation
+get_visible_text('#my-component')
+# check rendered text
 ```
 
-Only see events since the last `clear_logs` — no noise from earlier.
-
-## Fill a form and submit
+### Fill a form and check for errors
 
 ```
-1. get_page_markdown() — find form fields and button
-2. fill({ selector: '#email', value: 'test@example.com' })
-3. fill({ selector: '#password', value: 'secret' })
-4. click({ selector: 'button[type=submit]' })
-5. get_diagnostics() — check for errors
+fill("#email", "test@example.com")
+fill("#password", "secret123")
+click("text=Sign In")
+get_diagnostics({ since_checkpoint: true })
+# check for console errors, failed network requests
+screenshot()
 ```
 
-## Browse any site through the gateway proxy
-
-Gateway in hub mode proxies any URL:
+### Click by visible text
 
 ```
-http://localhost:3333/https://example.com/page
+click("text=Submit")
+click("text=Delete Account")
+click("text=60 comments")
 ```
 
-Client script auto-injected. Relative assets work via `<base>` tag. MCP tools and capnweb available for the proxied page.
+The `text=` prefix searches visible text content. Works on buttons, links, any element.
 
-## capnweb: find element by text, click nearby link
+### Wait for async UI
+
+```
+wait_for_condition({ check: "document.querySelector('.success-toast')", timeout: 5000 })
+screenshot()
+```
+
+### Debug network requests
+
+```
+clear_logs
+click("text=Load Data")
+get_diagnostics({ since_checkpoint: true })
+# logs.network shows fetch/XHR with status, duration, URL
+```
+
+## Browsing & Scraping (via gateway proxy)
+
+### Instrument any website
+
+Browse through the gateway proxy — `http://localhost:3333/https://example.com/`. MCP tools work on the proxied page.
+
+### Read a page and follow links
+
+```
+get_page_markdown()
+# output: [DOOM Over DNS](https://github.com/resumex/doom-over-dns) ... [60 comments](item?id=47490705)
+navigate("https://news.ycombinator.com/item?id=47490705")
+```
+
+### capnweb: direct remote DOM
+
+For complex traversal, connect via capnweb at `ws://localhost:3333/__rpc/agent`:
 
 ```js
+import { connect } from 'web-dev-mcp-gateway/agent'
+
+const browser = await connect('ws://localhost:3333/__rpc/agent')
 const { document } = browser
 
-// Find a heading
-const heading = await document.querySelector('h2')
-const text = await heading.textContent  // "DOOM Over DNS"
+// Promise-pipelined chain — minimal round trips
+const link = document.querySelector('a[href*="doom"]')
+const commentsRow = link.closest('tr').nextElementSibling
+const href = await commentsRow.querySelector('.subline a:last-child').href
 
-// Traverse to a sibling link
-const container = heading.closest('article')
-const link = container.querySelector('a[href*="comments"]')
-await link.click()
+await browser.navigate(href)
+browser.close()
+
+// Reconnect after navigation
+const page2 = await connect('ws://localhost:3333/__rpc/agent')
+const topComment = await page2.document.querySelector('.commtext').textContent
+page2.close()
 ```
 
-No CSS selector gymnastics — walk the DOM naturally.
+No `eval()`, no CSP issues. Full DOM API via remote proxies.
 
-## capnweb: read a table
-
-```js
-const rows = document.querySelectorAll('table tr')
-// Note: querySelectorAll returns a remote NodeList
-// Access by index:
-const firstRow = rows[0]
-const cells = firstRow.querySelectorAll('td')
-const name = await cells[0].textContent
-const value = await cells[1].textContent
-```
-
-## capnweb: fill and submit without knowing selectors
+### capnweb: get markdown from a specific element
 
 ```js
-const form = document.querySelector('form')
-const inputs = form.querySelectorAll('input')
-// Set values via the remote proxy
-inputs[0].value = 'test@example.com'
-inputs[1].value = 'password123'
-form.querySelector('button').click()
+const result = await browser.getPageMarkdown('.commtext')
+console.log(result.markdown)
 ```

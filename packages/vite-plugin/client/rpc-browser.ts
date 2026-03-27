@@ -209,15 +209,49 @@ class BrowserApi extends RpcTarget {
     }
   }
 
+  // Find element by CSS selector or text content
+  // Prefix with "text=" to search by text: "text=Submit" or "text=60 comments"
+  findElement(selector) {
+    if (selector.startsWith('text=')) {
+      var search = selector.slice(5)
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
+      var node
+      while (node = walker.nextNode()) {
+        var el = node
+        // Check direct text content (not children's text)
+        var directText = Array.from(el.childNodes)
+          .filter(n => n.nodeType === 3)
+          .map(n => n.textContent.trim())
+          .join(' ')
+        if (directText && directText.includes(search)) return el
+      }
+      // Fallback: any element containing the text
+      walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
+      while (node = walker.nextNode()) {
+        if (node.textContent && node.textContent.includes(search)) {
+          // Prefer the most specific (deepest) match
+          var children = node.querySelectorAll('*')
+          for (var i = children.length - 1; i >= 0; i--) {
+            if (children[i].textContent.trim().includes(search) &&
+                children[i].children.length === 0) return children[i]
+          }
+          return node
+        }
+      }
+      return null
+    }
+    return document.querySelector(selector)
+  }
+
   click(selector) {
-    const el = document.querySelector(selector)
+    var el = this.findElement(selector)
     if (!el) return { error: 'Element not found: ' + selector }
     el.click()
     return { clicked: selector, tag: el.tagName.toLowerCase() }
   }
 
   fill(selector, value) {
-    const el = document.querySelector(selector)
+    var el = this.findElement(selector)
     if (!el) return { error: 'Element not found: ' + selector }
     // Use native setter to trigger React's synthetic event system
     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
@@ -236,7 +270,7 @@ class BrowserApi extends RpcTarget {
   }
 
   selectOption(selector, value) {
-    const el = document.querySelector(selector)
+    var el = this.findElement(selector)
     if (!el || el.tagName !== 'SELECT') return { error: 'Select element not found: ' + selector }
     // Find option by value or text
     const options = Array.from(el.options)
@@ -248,7 +282,7 @@ class BrowserApi extends RpcTarget {
   }
 
   hover(selector) {
-    const el = document.querySelector(selector)
+    var el = this.findElement(selector)
     if (!el) return { error: 'Element not found: ' + selector }
     el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
     el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
