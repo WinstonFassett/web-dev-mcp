@@ -164,7 +164,7 @@ export function setupRpcWebSocket(httpServer: { on(event: string, listener: (...
 // --- Agent RPC endpoint ---
 // Agents connect here and get a GatewayApi that proxies to the browser's document/window
 
-class GatewayApi extends RpcTarget {
+export class GatewayApi extends RpcTarget {
   get document() {
     const stub = getBrowserStub()
     if (!stub) throw new Error('No browser connected')

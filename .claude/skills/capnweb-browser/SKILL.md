@@ -39,18 +39,34 @@ browser.close()  // all refs die
 
 **Refs die when:** WebSocket closes, browser page reloads, gateway restarts.
 
-### HTTP batch (`/__rpc/batch` — planned)
+### HTTP batch (`/__rpc/batch`)
 
 Stateless per request. All calls in one HTTP round-trip. Refs exist within the batch but die when the response completes.
 
-```
-POST /__rpc/batch
-Content-Type: application/json
+```js
+import { newHttpBatchRpcSession } from 'capnweb'
 
-[capnweb protocol messages]
+const gw = newHttpBatchRpcSession('http://localhost:3333/__rpc/batch')
+const title = await gw.document.title          // one HTTP POST, done
+const md = await gw.getPageMarkdown()           // another POST, independent
 ```
 
-Each request is self-contained. No cross-request state. Good for one-shot operations, CI bots, curl-based testing.
+Each call to `newHttpBatchRpcSession` creates a fresh session. No WebSocket. No persistent state. Good for one-shot operations, CI bots, scripts.
+
+Raw protocol via curl (newline-separated messages):
+
+```bash
+# One-shot: read document.title
+curl -X POST http://localhost:3333/__rpc/batch \
+  -d '["stream",["import",0,["document","title"]]]'
+# → ["resolve",1,"My Page Title"]
+
+# Pipelined: querySelector then read tagName (one round-trip)
+curl -X POST http://localhost:3333/__rpc/batch \
+  -d '["push",["import",0,["document","querySelector"],["body"]]]
+["stream",["import",1,["tagName"]]]'
+# → ["resolve",2,"BODY"]
+```
 
 **Refs die when:** HTTP response completes.
 
@@ -85,6 +101,30 @@ This affects both transports. A held ref to `<h1>` is meaningless after the page
 | CI/CD automation, one-shot queries | HTTP batch (`/__rpc/batch`) |
 | Custom agent scripts | WebSocket via `connect()` helper |
 | Admin dashboard | WebSocket + polling |
+
+## Protocol overview
+
+Full spec: https://github.com/cloudflare/capnweb/blob/main/protocol.md
+
+Messages are JSON arrays. Key message types:
+
+| Message | Purpose |
+|---|---|
+| `["push", expr]` | Call a method or read a property. Returns an import ID. |
+| `["pull", importId]` | Request the resolved value of an import. |
+| `["resolve", exportId, expr]` | Server returns a result. |
+| `["reject", exportId, expr]` | Server returns an error. |
+| `["release", importId, refcount]` | Client frees a reference. |
+| `["stream", expr]` | One-shot: push + auto-pull + release. |
+
+Expressions reference remote objects:
+- `["import", 0]` — the main API object (import ID 0)
+- `["import", 0, ["document", "querySelector"], ["h1"]]` — call `api.document.querySelector("h1")`
+- `["import", 3, ["textContent"]]` — read property on import ID 3
+
+Promise pipelining: you can reference an import ID before it resolves. The server queues the call. Multiple `push` messages in one batch execute sequentially server-side — one network round-trip for the whole chain.
+
+Values are JSON with type wrappers: `["date", ms]`, `["error", type, msg, stack?]`, `["bytes", base64]`, `["undefined"]`. `RpcTarget` instances are passed by reference (as export/import IDs), not by value.
 
 ## Agent client helper
 

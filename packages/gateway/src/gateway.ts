@@ -15,7 +15,8 @@ import { ErrorsWriter } from './writers/errors.js'
 import { NetworkWriter } from './writers/network.js'
 import { DevEventsWriter, type BuildEventPayload } from './writers/dev-events.js'
 import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './mcp-server.js'
-import { setupRpcWebSocket, setupAgentRpcWebSocket } from './rpc-server.js'
+import { nodeHttpBatchRpcResponse } from 'capnweb'
+import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi } from './rpc-server.js'
 import { autoRegister } from './auto-register.js'
 import { ServerRegistry, type RegisteredServer } from './registry.js'
 
@@ -310,6 +311,19 @@ export async function startGateway(options: GatewayOptions) {
         registered_servers: registry.getAll(),
         uptime_ms: Date.now() - session.startedAt,
       }, null, 2))
+      return
+    }
+
+    // capnweb HTTP batch endpoint — stateless per request
+    if (url === '/__rpc/batch') {
+      nodeHttpBatchRpcResponse(req, res, new GatewayApi(), {
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      }).catch((err: any) => {
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'text/plain' })
+          res.end(`Batch RPC error: ${err.message}`)
+        }
+      })
       return
     }
 
