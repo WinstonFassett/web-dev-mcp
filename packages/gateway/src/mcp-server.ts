@@ -242,12 +242,29 @@ function createMcpServerInstance(ctx: McpContext): McpServer {
         const state = capnwebStates.get(sessionId)!
 
         // browser object exposes BrowserApi helpers that aren't on document/window
+        const doc = (stub as any).document
         const browser = {
           markdown: (selector?: string) => (stub as any).getPageMarkdown(selector),
           screenshot: (selector?: string) => (stub as any).screenshot(selector),
           navigate: (url: string) => (stub as any).navigate(url),
           click: (selector: string) => (stub as any).click(selector),
           fill: (selector: string, value: string) => (stub as any).fill(selector, value),
+          waitFor: async (fnOrSelector: string | Function, interval = 100, timeout = 5000) => {
+            const deadline = Date.now() + timeout
+            while (Date.now() < deadline) {
+              try {
+                let result
+                if (typeof fnOrSelector === 'string') {
+                  result = await doc.querySelector(fnOrSelector)
+                } else {
+                  result = await fnOrSelector()
+                }
+                if (result) return result
+              } catch {}
+              await new Promise(r => setTimeout(r, interval))
+            }
+            throw new Error(`waitFor timed out after ${timeout}ms`)
+          },
         }
 
         const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
