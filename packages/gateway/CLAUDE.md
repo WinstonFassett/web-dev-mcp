@@ -1,0 +1,21 @@
+# web-dev-mcp-gateway
+
+Universal gateway — proxy, MCP server, capnweb routing between agents and browsers.
+
+## Build
+
+```bash
+npm run build   # tsc && node build-client.mjs
+```
+
+`build-client.mjs` bundles `src/client/index.ts` into `dist/client.js` (~540KB) using esbuild. This is the browser script injected into proxied pages.
+
+## Non-obvious
+
+- MCP tools split into `mcp-tools-core.ts` (3 tools) and `mcp-tools-full.ts` (23 tools). Selected by `?tools=` query param on SSE URL.
+- `eval_capnweb` uses `AsyncFunction` (not `vm.runInContext`) to avoid cross-realm serialization issues with capnweb stubs.
+- `capnwebStates` map in `mcp-tools-core.ts` is module-level, shared across MCP server instances. Keyed by `extra.sessionId` from MCP SDK. Cleaned up on SSE disconnect in `mcp-server.ts`.
+- `rpc-server.ts` has two WebSocket endpoints: `/__rpc` (browsers connect, server gets stubs) and `/__rpc/agent` (agents connect, server gives them browser stubs via `GatewayApi`).
+- `GatewayApi` in `rpc-server.ts` bridges agent→browser by returning the browser stub's `document`/`window`. capnweb handles cross-session proxy automatically.
+- Dynamic proxy: when no `--target`, URLs like `/https://example.com/page` are proxied with `<base>` tag injection for relative assets. Uses `secure: false` for HTTPS targets.
+- `src/client/index.ts` is the browser-side client. It has its own `BrowserApi` class with `findElement` (text= support), `getPageMarkdown`, `navigate`, etc. Changes here require `npm run build` (esbuild rebundle).
