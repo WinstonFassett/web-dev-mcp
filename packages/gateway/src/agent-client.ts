@@ -16,6 +16,11 @@ interface GatewayStub {
   localStorage: any
   sessionStorage: any
   navigate(url: string): Promise<{ navigated: string }>
+  getPageMarkdown(selector?: string): Promise<{ markdown: string; length: number } | { error: string }>
+  getVisibleText(selector?: string): Promise<{ text: string; length: number } | { error: string }>
+  screenshot(selector?: string): Promise<{ data: string; width: number; height: number } | { error: string }>
+  click(selector: string): Promise<{ clicked: string; tag: string } | { error: string }>
+  fill(selector: string, value: string): Promise<{ filled: string; value: string } | { error: string }>
   getBrowserCount(): Promise<number>
   getBrowserList(): Promise<Array<{ connId: string; browserId: string | null }>>
 }
@@ -27,6 +32,16 @@ export interface BrowserConnection {
   window: any
   /** Navigate to a URL (triggers page reload, reconnect after) */
   navigate(url: string): Promise<{ navigated: string }>
+  /** Convert page/element DOM to markdown with links */
+  getPageMarkdown(selector?: string): Promise<{ markdown: string; length: number } | { error: string }>
+  /** Get visible text of an element or page */
+  getVisibleText(selector?: string): Promise<{ text: string; length: number } | { error: string }>
+  /** Take a screenshot, returns base64 PNG */
+  screenshot(selector?: string): Promise<{ data: string; width: number; height: number } | { error: string }>
+  /** Click an element by CSS selector */
+  click(selector: string): Promise<{ clicked: string; tag: string } | { error: string }>
+  /** Fill an input by CSS selector */
+  fill(selector: string, value: string): Promise<{ filled: string; value: string } | { error: string }>
   /** How many browsers are connected */
   getBrowserCount(): Promise<number>
   /** Close the connection */
@@ -82,6 +97,11 @@ export function connect(url: string): Promise<BrowserConnection> {
         document: gw.document,
         window: gw.window,
         navigate: (url: string) => gw.navigate(url),
+        getPageMarkdown: (selector?: string) => gw.getPageMarkdown(selector),
+        getVisibleText: (selector?: string) => gw.getVisibleText(selector),
+        screenshot: (selector?: string) => gw.screenshot(selector),
+        click: (selector: string) => gw.click(selector),
+        fill: (selector: string, value: string) => gw.fill(selector, value),
         getBrowserCount: () => gw.getBrowserCount(),
         close: () => ws.close(),
       })

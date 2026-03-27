@@ -259,6 +259,31 @@ class GatewayApi extends RpcTarget {
     if (!stub) throw new Error('No browser connected')
     return (stub as any).navigate(url)
   }
+  getPageMarkdown(selector?: string) {
+    const stub = getBrowserStub()
+    if (!stub) throw new Error('No browser connected')
+    return (stub as any).getPageMarkdown(selector)
+  }
+  getVisibleText(selector?: string) {
+    const stub = getBrowserStub()
+    if (!stub) throw new Error('No browser connected')
+    return (stub as any).getVisibleText(selector)
+  }
+  screenshot(selector?: string) {
+    const stub = getBrowserStub()
+    if (!stub) throw new Error('No browser connected')
+    return (stub as any).screenshot(selector)
+  }
+  click(selector: string) {
+    const stub = getBrowserStub()
+    if (!stub) throw new Error('No browser connected')
+    return (stub as any).click(selector)
+  }
+  fill(selector: string, value: string) {
+    const stub = getBrowserStub()
+    if (!stub) throw new Error('No browser connected')
+    return (stub as any).fill(selector, value)
+  }
   getBrowserCount() {
     return browsers.size
   }
