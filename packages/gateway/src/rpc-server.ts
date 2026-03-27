@@ -254,6 +254,11 @@ class GatewayApi extends RpcTarget {
     if (!stub) throw new Error('No browser connected')
     return (stub as any).sessionStorage
   }
+  navigate(url: string) {
+    const stub = getBrowserStub()
+    if (!stub) throw new Error('No browser connected')
+    return (stub as any).navigate(url)
+  }
   getBrowserCount() {
     return browsers.size
   }

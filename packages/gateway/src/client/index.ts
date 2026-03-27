@@ -527,6 +527,11 @@
           return { scrolledTo: { x: x || 0, y: y || 0 } }
         }
 
+        navigate(url: string) {
+          window.location.href = url
+          return { navigated: url }
+        }
+
         getVisibleText(selector?: string) {
           const el = selector ? document.querySelector(selector) : document.body
           if (!el) return { error: 'Element not found: ' + selector }

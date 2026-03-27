@@ -285,6 +285,11 @@ class BrowserApi extends RpcTarget {
     return { scrolledTo: { x: x || 0, y: y || 0 } }
   }
 
+  navigate(url) {
+    window.location.href = url
+    return { navigated: url }
+  }
+
   getVisibleText(selector) {
     const el = selector ? document.querySelector(selector) : document.body
     if (!el) return { error: 'Element not found: ' + selector }

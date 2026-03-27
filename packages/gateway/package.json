@@ -28,6 +28,11 @@
       "types": "./dist/nextjs/instrument.d.ts",
       "import": "./dist/nextjs/instrument.js",
       "default": "./dist/nextjs/instrument.js"
+    },
+    "./agent": {
+      "types": "./dist/agent-client.d.ts",
+      "import": "./dist/agent-client.js",
+      "default": "./dist/agent-client.js"
     }
   },
   "files": [
