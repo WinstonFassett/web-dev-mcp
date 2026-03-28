@@ -72,6 +72,16 @@ export async function startGateway(options: GatewayOptions) {
     process.exit(1)
   }
 
+  // Optional proxy plugin — if web-dev-mcp-proxy is installed, mount it
+  let proxyMiddleware: ((req: any, res: any, next: () => void) => void) | null = null
+  try {
+    const { createProxyMiddleware } = await import('web-dev-mcp-proxy')
+    proxyMiddleware = createProxyMiddleware(clientScript)
+    console.log('  [web-dev-mcp] Proxy plugin loaded')
+  } catch {
+    // Not installed — no proxy, that's fine
+  }
+
   // Create server registry for hybrid architecture
   const registry = new ServerRegistry()
 
@@ -232,6 +242,15 @@ export async function startGateway(options: GatewayOptions) {
           res.writeHead(500, { 'Content-Type': 'text/plain' })
           res.end(`Batch RPC error: ${err.message}`)
         }
+      })
+      return
+    }
+
+    // Try optional proxy plugin (npm install web-dev-mcp-proxy)
+    if (proxyMiddleware) {
+      proxyMiddleware(req, res, () => {
+        res.writeHead(404, { 'Content-Type': 'text/plain' })
+        res.end('Not found')
       })
       return
     }
