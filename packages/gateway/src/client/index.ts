@@ -179,7 +179,7 @@
   }
 
   // --- capnweb RPC (for eval/queryDom from server) ---
-  import('capnweb').then(({ RpcTarget, newWebSocketRpcSession }) => {
+  import('capnweb').then(({ RpcTarget, RpcSession }) => {
     {
       // browserId is hoisted to top of IIFE — shared with events WS
 
@@ -545,11 +545,71 @@
       const browserApi = new BrowserApi()
       let rpcReconnectTimer: ReturnType<typeof setTimeout> | null = null
 
+      function createBrowserWsTransport(ws: WebSocket) {
+        const messageQueue: string[] = []
+        let resolveWaiter: ((msg: string) => void) | null = null
+        let rejectWaiter: ((err: Error) => void) | null = null
+
+        function deliver(msg: string) {
+          if (resolveWaiter) {
+            const resolve = resolveWaiter
+            resolveWaiter = null
+            rejectWaiter = null
+            resolve(msg)
+          } else {
+            messageQueue.push(msg)
+          }
+        }
+
+        ws.addEventListener('message', (e) => {
+          if (typeof e.data === 'string') {
+            deliver(e.data)
+          } else if (e.data instanceof Blob) {
+            e.data.text().then(deliver)
+          } else {
+            deliver(String(e.data))
+          }
+        })
+
+        ws.addEventListener('close', () => {
+          if (rejectWaiter) {
+            rejectWaiter(new Error('WebSocket closed'))
+            resolveWaiter = null
+            rejectWaiter = null
+          }
+        })
+
+        ws.addEventListener('error', () => {
+          if (rejectWaiter) {
+            rejectWaiter(new Error('WebSocket error'))
+            resolveWaiter = null
+            rejectWaiter = null
+          }
+        })
+
+        return {
+          send(message: string) {
+            ws.send(message)
+            return Promise.resolve()
+          },
+          receive() {
+            if (messageQueue.length > 0) {
+              return Promise.resolve(messageQueue.shift()!)
+            }
+            return new Promise<string>((resolve, reject) => {
+              resolveWaiter = resolve
+              rejectWaiter = reject
+            })
+          },
+        }
+      }
+
       function connectRpc() {
         const ws = new WebSocket(rpcUrl)
 
         ws.onopen = () => {
-          newWebSocketRpcSession(ws as any, browserApi)
+          const transport = createBrowserWsTransport(ws)
+          new RpcSession(transport, browserApi)
           originalConsole.log('[web-dev-mcp] RPC connected:', rpcUrl)
         }
 
