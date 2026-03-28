@@ -72,16 +72,18 @@ return await document.querySelector('#main-content').innerText
 return await document.querySelector('#main-content').innerHTML
 ```
 
-**Find source code for a DOM element:**
+**Find source code for an element by its text:**
 ```js
-// Which file/line renders this button?
-const info = await browser.elementSource('button.save')
-// → { componentName: "SaveButton", source: { filePath: "/src/SaveButton.tsx", lineNumber: 12 } }
+// User says: "the element that says 'Total: $NaN' is broken"
+const info = await browser.elementSource('text=Total: $NaN')
+// → { componentName: "OrderSummary", source: { filePath: "/src/checkout/OrderSummary.tsx", lineNumber: 43 } }
+// Agent opens that file at line 43 and fixes it — no grepping through the codebase.
 
-// Requires element-source installed in the app:
-// npm install element-source
-// Then in app entry: import { resolveElementInfo } from 'element-source'
-//   ;(window as any).__resolveElementInfo = resolveElementInfo
+// Also works with CSS selectors:
+const info2 = await browser.elementSource('.price-widget .total')
+
+// Requires element-source in the app (npm install element-source).
+// See examples/vite-app/src/main.tsx for setup (2 lines).
 ```
 
 **Click by text:**

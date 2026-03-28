@@ -107,11 +107,16 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
         const browser = {
           eval: (expression: string) => stub.eval(expression),
           elementSource: async (selector: string) => {
+            // Uses findElement which supports text= prefix for text-based matching
             const result = await stub.eval(
-              `typeof window.__resolveElementInfo === 'function'` +
-              ` ? window.__resolveElementInfo(document.querySelector('${selector.replace(/'/g, "\\'")}'))` +
-              `   .then(i => JSON.stringify(i))` +
-              ` : JSON.stringify({ error: 'element-source not installed. Add element-source to your app.' })`
+              `(function() {` +
+              ` var el = document.querySelector && '${selector.replace(/'/g, "\\'")}'.startsWith('text=')` +
+              `   ? (function() { var s = '${selector.replace(/'/g, "\\'")}'.slice(5); var w = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT); var n; while (n = w.nextNode()) { if (n.textContent && n.textContent.trim().includes(s) && n.children.length === 0) return n; } return null; })()` +
+              `   : document.querySelector('${selector.replace(/'/g, "\\'")}');` +
+              ` if (!el) return JSON.stringify({ error: 'Element not found: ${selector.replace(/'/g, "\\'")}' });` +
+              ` if (typeof window.__resolveElementInfo !== 'function') return JSON.stringify({ error: 'element-source not installed' });` +
+              ` return window.__resolveElementInfo(el).then(function(i) { return JSON.stringify(i); });` +
+              `})()`
             )
             try { return JSON.parse(result) } catch { return { error: result } }
           },
