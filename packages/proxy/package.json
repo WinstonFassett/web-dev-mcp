@@ -1,0 +1,34 @@
+{
+  "name": "web-dev-mcp-proxy",
+  "version": "0.1.0",
+  "description": "Dynamic proxy plugin for web-dev-mcp-gateway — browse any URL with MCP instrumentation",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WinstonFassett/web-dev-mcp.git",
+    "directory": "packages/proxy"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "http-proxy": "^1.18.1"
+  },
+  "devDependencies": {
+    "@types/http-proxy": "^1.17.16",
+    "@types/node": "^25.5.0",
+    "typescript": "^5.8.0"
+  }
+}
