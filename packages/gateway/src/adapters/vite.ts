@@ -49,6 +49,51 @@ function registerWithGateway(
   })
 }
 
+// Guard: true while our own code is logging (prevents infinite recursion)
+let _internalLogging = false
+
+function patchConsole(gatewayUrl: string, sid: string) {
+  const wsUrl = gatewayUrl.replace(/^http/, 'ws') + '/__events?server=' + encodeURIComponent(sid)
+  let ws: WebSocket | null = null
+  let queue: string[] = []
+  let closed = false
+
+  function connect() {
+    if (closed) return
+    ws = new WebSocket(wsUrl)
+    ws.on('open', () => { for (const msg of queue) ws!.send(msg); queue = [] })
+    ws.on('close', () => { ws = null; if (!closed) setTimeout(connect, 2000) })
+    ws.on('error', () => {})
+  }
+  connect()
+
+  function send(level: string, args: any[]) {
+    const serialized = args.map(a => {
+      if (typeof a === 'string') return a.slice(0, 2000)
+      try { return JSON.stringify(a).slice(0, 2000) } catch { return String(a).slice(0, 2000) }
+    })
+    const msg = JSON.stringify({
+      channel: 'server-console',
+      payload: { level, args: serialized, source: 'server' },
+    })
+    if (ws?.readyState === WebSocket.OPEN) ws.send(msg)
+    else if (queue.length < 1000) queue.push(msg)
+  }
+
+  for (const level of ['log', 'warn', 'error', 'info', 'debug'] as const) {
+    const orig = console[level]
+    console[level] = (...args: any[]) => {
+      orig.apply(console, args)
+      if (_internalLogging) return
+      const first = args[0]
+      if (typeof first === 'string' && (first.startsWith('[web-dev-mcp]') || first.startsWith('  [web-dev-mcp]') || first.startsWith('[registry]'))) return
+      send(level, args)
+    }
+  }
+
+  process.on('exit', () => { closed = true; ws?.close() })
+}
+
 export function webDevMcp(options: ViteAdapterOptions = {}): Plugin {
   const gatewayUrl = options.gateway ?? 'http://localhost:3333'
   let clientSource: string | undefined
@@ -104,7 +149,10 @@ export function webDevMcp(options: ViteAdapterOptions = {}): Plugin {
         const result = await registerWithGateway(gatewayUrl, resolvedConfig).catch(() => null)
         if (result) {
           serverId = result.serverId
+          _internalLogging = true
           console.log(`  [web-dev-mcp] Registered with gateway (server: ${serverId}, logs: ${result.logDir})`)
+          _internalLogging = false
+          patchConsole(gatewayUrl, serverId)
         }
       }
 

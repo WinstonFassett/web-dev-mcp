@@ -109,11 +109,15 @@ export class ServerRegistry {
   }
 
   /**
-   * Remove servers whose processes are no longer running
+   * Remove servers whose processes are no longer running.
+   * Skips servers registered within the last 30s (grace period for process forks).
    */
   cleanupDeadServers(): number {
     let removed = 0
+    const now = Date.now()
     for (const server of this.getAll()) {
+      // Grace period: don't kill recently registered servers (process may be forking)
+      if (now - server.registeredAt < 30_000) continue
       try {
         // Check if process is still alive (signal 0 doesn't actually send a signal)
         process.kill(server.pid, 0)

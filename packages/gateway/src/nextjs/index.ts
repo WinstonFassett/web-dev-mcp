@@ -36,22 +36,21 @@ function registerAndPatchConsole(gatewayUrl: string) {
       // Set server ID for browser client to pick up
       process.env.__WEB_DEV_MCP_SERVER__ = data.serverId
 
-      // Start server-side console capture
+      // Start server-side console capture + build events
       patchConsole(gatewayUrl, data.serverId)
+      connectDevEvents(gatewayUrl, data.serverId)
     }
   }).catch(() => {
     // Gateway not running — that's fine
   })
 }
 
-function patchConsole(gatewayUrl: string, serverId: string) {
-  // Dynamic import ws — it's a dependency of web-dev-mcp-gateway
-  let WebSocket: any
+async function patchConsole(gatewayUrl: string, serverId: string) {
+  let WS: any
   try {
-    WebSocket = require('ws')
+    WS = (await import('ws')).default
   } catch {
-    // ws not available — skip server console capture
-    return
+    return // ws not available
   }
 
   const wsUrl = gatewayUrl.replace(/^http/, 'ws') + '/__events?server=' + encodeURIComponent(serverId)
@@ -61,7 +60,7 @@ function patchConsole(gatewayUrl: string, serverId: string) {
 
   function connect() {
     if (closed) return
-    ws = new WebSocket(wsUrl)
+    ws = new WS(wsUrl)
 
     ws.on('open', () => {
       for (const msg of queue) ws.send(msg)
@@ -71,9 +70,7 @@ function patchConsole(gatewayUrl: string, serverId: string) {
       ws = null
       if (!closed) setTimeout(connect, 2000)
     })
-    ws.on('error', () => {
-      // Swallow — close handler does reconnect
-    })
+    ws.on('error', () => {})
   }
   connect()
 
@@ -112,6 +109,56 @@ function patchConsole(gatewayUrl: string, serverId: string) {
   process.on('exit', () => { closed = true; ws?.close() })
 }
 
+// --- Dev events (build/HMR) ---
+
+let _devEventsWs: any = null
+let _devEventsQueue: string[] = []
+
+async function connectDevEvents(gatewayUrl: string, sid: string) {
+  let WS: any
+  try { WS = (await import('ws')).default } catch { return }
+
+  const wsUrl = gatewayUrl.replace(/^http/, 'ws') + '/__dev-events?server=' + encodeURIComponent(sid)
+  let closed = false
+
+  function connect() {
+    if (closed) return
+    _devEventsWs = new WS(wsUrl)
+    _devEventsWs.on('open', () => { for (const msg of _devEventsQueue) _devEventsWs.send(msg); _devEventsQueue = [] })
+    _devEventsWs.on('close', () => { _devEventsWs = null; if (!closed) setTimeout(connect, 2000) })
+    _devEventsWs.on('error', () => {})
+  }
+  connect()
+
+  process.on('exit', () => { closed = true; _devEventsWs?.close() })
+}
+
+function sendBuildEvent(payload: any) {
+  const msg = JSON.stringify(payload)
+  if (_devEventsWs?.readyState === 1) _devEventsWs.send(msg)
+  else if (_devEventsQueue.length < 100) _devEventsQueue.push(msg)
+}
+
+/** Webpack plugin that sends build events to the gateway */
+class WebDevMcpBuildPlugin {
+  apply(compiler: any) {
+    compiler.hooks.compile.tap('WebDevMcpBuild', () => {
+      sendBuildEvent({ type: 'build:start' })
+    })
+
+    compiler.hooks.done.tap('WebDevMcpBuild', (stats: any) => {
+      if (stats.hasErrors()) {
+        const errors = stats.toJson({ errors: true }).errors
+        const msg = errors?.[0]?.message ?? 'Build error'
+        sendBuildEvent({ type: 'build:error', error: msg })
+      } else {
+        const modules = Object.keys(stats.toJson({ assets: false, modules: true }).modules ?? {}).slice(0, 20)
+        sendBuildEvent({ type: 'build:update', modules, duration: stats.endTime - stats.startTime })
+      }
+    })
+  }
+}
+
 export function withWebDevMcp(
   nextConfig: NextConfig = {},
   options: WebDevMcpOptions = {}
@@ -135,7 +182,13 @@ export function withWebDevMcp(
     webpack(config: any, webpackOptions: any) {
       const { dev, isServer } = webpackOptions
 
-      // Only inject in development and client-side bundles
+      // Add build event plugin (both client and server compilations)
+      if (dev) {
+        config.plugins = config.plugins || []
+        config.plugins.push(new WebDevMcpBuildPlugin())
+      }
+
+      // Only inject client instrumentation in development client bundles
       if (dev && !isServer) {
         const originalEntry = config.entry
 
