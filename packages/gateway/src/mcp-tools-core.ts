@@ -87,7 +87,7 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
     'eval_js_rpc',
     'Run JavaScript server-side with document/window as capnweb remote proxies to the browser DOM. Each property access or method call is an RPC round-trip. CSP-safe, multi-statement, supports await. Optional `state` object persists across calls — use it to hold refs to JS runtime objects (stores, globals) that survive HMR. Use `browser.*` helpers for common operations.',
     {
-      code: z.string().describe('JavaScript code. Globals: `document`, `window` (capnweb proxies), `state` (persists across calls — store refs here), `browser` (helpers: .markdown(sel?), .screenshot(sel?), .navigate(url), .click(sel), .fill(sel, val), .waitFor(fnOrSel, interval?, timeout?), .eval(expr)). Use `await` to read values.'),
+      code: z.string().describe('JavaScript code. Globals: `document`, `window` (capnweb proxies), `state` (persists across calls — store refs here), `browser` (helpers: .markdown(sel?), .screenshot(sel?), .navigate(url), .click(sel), .fill(sel, val), .waitFor(fnOrSel, interval?, timeout?), .eval(expr), .elementSource(sel) — returns {componentName, source: {filePath, lineNumber}}). Use `await` to read values.'),
     },
     async (args, extra) => {
       const serverId = getServerId(ctx)
@@ -106,6 +106,15 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
         const doc = (stub as any).document
         const browser = {
           eval: (expression: string) => stub.eval(expression),
+          elementSource: async (selector: string) => {
+            const result = await stub.eval(
+              `typeof window.__resolveElementInfo === 'function'` +
+              ` ? window.__resolveElementInfo(document.querySelector('${selector.replace(/'/g, "\\'")}'))` +
+              `   .then(i => JSON.stringify(i))` +
+              ` : JSON.stringify({ error: 'element-source not installed. Add element-source to your app.' })`
+            )
+            try { return JSON.parse(result) } catch { return { error: result } }
+          },
           markdown: (selector?: string) => (stub as any).getPageMarkdown(selector),
           screenshot: (selectorOrOpts?: string | Record<string, any>) => (stub as any).screenshot(selectorOrOpts),
           navigate: (url: string) => (stub as any).navigate(url),
