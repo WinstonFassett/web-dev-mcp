@@ -39,7 +39,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc && node build-client.mjs",
+    "build": "tsc && node build-client.mjs && cp -r ../../examples/admin-svelte/dist dist/admin 2>/dev/null || true",
     "build:client": "node build-client.mjs",
     "dev": "tsc --watch",
     "test": "node dist/cli.js"
