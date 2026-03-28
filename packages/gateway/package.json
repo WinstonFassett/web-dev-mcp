@@ -60,6 +60,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.0",
     "capnweb": "^0.6.1",
+    "modern-screenshot": "^4.6.8",
     "ws": "^8.20.0",
     "zod": "^4.0.0"
   },

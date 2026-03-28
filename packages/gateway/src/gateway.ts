@@ -159,6 +159,25 @@ export async function startGateway(options: GatewayOptions) {
       return
     }
 
+    // Serve lazy-loaded libs (screenshot library, etc.)
+    if (url.startsWith('/__libs/')) {
+      const libName = url.slice('/__libs/'.length)
+      try {
+        const libPath = join(__dirname, 'libs', libName)
+        const content = readFileSync(libPath, 'utf-8')
+        addCorsHeaders(res)
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript',
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        })
+        res.end(content)
+      } catch {
+        res.writeHead(404)
+        res.end('Not found')
+      }
+      return
+    }
+
     // Gateway registration endpoints
     if (url === '/__gateway/register' && req.method === 'POST') {
       addCorsHeaders(res)

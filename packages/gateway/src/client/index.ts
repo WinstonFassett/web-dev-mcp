@@ -332,36 +332,97 @@
 
         // --- Browser interaction methods ---
 
-        async screenshot(selector?: string) {
+        async screenshot(selectorOrOpts?: string | {
+          selector?: string
+          preset?: 'viewport' | 'element' | 'full' | 'thumb' | 'hd'
+          format?: 'png' | 'jpeg'
+          quality?: number
+          scale?: number
+          maxWidth?: number
+        }) {
+          // Parse arguments
+          const opts = typeof selectorOrOpts === 'string'
+            ? { selector: selectorOrOpts }
+            : (selectorOrOpts || {})
+
+          const selector = opts.selector
           const target = selector ? document.querySelector(selector) : document.documentElement
           if (!target) return { error: 'Element not found: ' + selector }
 
+          // Canvas element — use native toDataURL (no library needed)
+          if (target instanceof HTMLCanvasElement) {
+            try {
+              const fmt = opts.format === 'png' ? 'image/png' : 'image/jpeg'
+              const data = target.toDataURL(fmt, opts.quality ? opts.quality / 100 : 0.8)
+              return { data, width: target.width, height: target.height }
+            } catch (err: any) {
+              return { error: 'Canvas screenshot failed: ' + err.message }
+            }
+          }
+
+          // Resolve preset defaults
+          const preset = opts.preset || (selector ? 'element' : 'viewport')
+          const presets: Record<string, { scale: number; format: string; quality: number; maxWidth: number; fullPage: boolean }> = {
+            viewport: { scale: 1, format: 'jpeg', quality: 80, maxWidth: 1024, fullPage: false },
+            element:  { scale: 1, format: 'jpeg', quality: 80, maxWidth: 1024, fullPage: false },
+            full:     { scale: 1, format: 'jpeg', quality: 80, maxWidth: 1024, fullPage: true },
+            thumb:    { scale: 1, format: 'jpeg', quality: 60, maxWidth: 512,  fullPage: false },
+            hd:       { scale: 1, format: 'png',  quality: 100, maxWidth: 1568, fullPage: false },
+          }
+          const p = presets[preset] || presets.viewport
+          const format = opts.format || p.format
+          const quality = opts.quality ?? p.quality
+          const scale = opts.scale ?? p.scale
+          const maxWidth = opts.maxWidth ?? p.maxWidth
+
+          // Load modern-screenshot (lazy, cached)
           if (!(window as any).__modernScreenshot) {
             try {
-              const mod = await import(/* @vite-ignore */ 'https://esm.sh/modern-screenshot@4.6.8')
+              const libUrl = gatewayOrigin + '/__libs/modern-screenshot.js'
+              const mod = await import(/* @vite-ignore */ libUrl).catch(() =>
+                import(/* @vite-ignore */ 'https://esm.sh/modern-screenshot@4.6.8')
+              )
               ;(window as any).__modernScreenshot = mod
             } catch (err: any) {
-              return { error: 'Failed to load modern-screenshot: ' + err.message }
+              return { error: 'Failed to load screenshot library: ' + err.message }
             }
           }
 
           try {
-            const { domToPng } = (window as any).__modernScreenshot
-            const dataUrl = await domToPng(target, {
-              scale: 1,
-            })
-            // Extract dimensions from the rendered image
+            const { domToPng, domToJpeg } = (window as any).__modernScreenshot
+            const render = format === 'png' ? domToPng : domToJpeg
+
+            // For viewport mode, clip to visible area
+            const renderOpts: any = { scale, quality: quality / 100 }
+            if (preset === 'viewport' || (preset !== 'full' && preset !== 'element')) {
+              renderOpts.height = window.innerHeight
+              renderOpts.style = { overflow: 'hidden' }
+            }
+
+            const dataUrl = await render(target, renderOpts)
+
+            // Resize if wider than maxWidth
             const img = new Image()
             await new Promise<void>((resolve, reject) => {
               img.onload = () => resolve()
               img.onerror = () => reject(new Error('Failed to decode screenshot'))
               img.src = dataUrl
             })
-            return {
-              data: dataUrl,
-              width: img.naturalWidth,
-              height: img.naturalHeight,
+
+            if (img.naturalWidth > maxWidth) {
+              const ratio = maxWidth / img.naturalWidth
+              const w = Math.round(img.naturalWidth * ratio)
+              const h = Math.round(img.naturalHeight * ratio)
+              const canvas = document.createElement('canvas')
+              canvas.width = w
+              canvas.height = h
+              const ctx = canvas.getContext('2d')!
+              ctx.drawImage(img, 0, 0, w, h)
+              const resized = canvas.toDataURL(format === 'png' ? 'image/png' : 'image/jpeg', quality / 100)
+              return { data: resized, width: w, height: h }
             }
+
+            return { data: dataUrl, width: img.naturalWidth, height: img.naturalHeight }
           } catch (err: any) {
             return { error: 'Screenshot failed: ' + err.message }
           }
@@ -579,6 +640,18 @@
   }).catch((err: any) => {
     originalConsole.warn('[web-dev-mcp] Could not load RPC modules:', err)
   })
+
+  // Preload screenshot library on idle (instant when actually needed)
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(() => {
+      const libUrl = gatewayOrigin + '/__libs/modern-screenshot.js'
+      import(/* @vite-ignore */ libUrl).then(mod => {
+        ;(window as any).__modernScreenshot = mod
+      }).catch(() => {
+        // Gateway may not serve /__libs/ yet — will fall back to esm.sh on first screenshot()
+      })
+    })
+  }
 
   originalConsole.log('[web-dev-mcp] Client loaded')
 })()

@@ -216,7 +216,7 @@ export class ProjectBrowserApi extends RpcTarget {
   navigate(url: string) { return (requireStub(this.serverId) as any).navigate(url) }
   getPageMarkdown(selector?: string) { return (requireStub(this.serverId) as any).getPageMarkdown(selector) }
   getVisibleText(selector?: string) { return (requireStub(this.serverId) as any).getVisibleText(selector) }
-  screenshot(selector?: string) { return (requireStub(this.serverId) as any).screenshot(selector) }
+  screenshot(selectorOrOpts?: string | Record<string, any>) { return (requireStub(this.serverId) as any).screenshot(selectorOrOpts) }
   click(selector: string) { return (requireStub(this.serverId) as any).click(selector) }
   fill(selector: string, value: string) { return (requireStub(this.serverId) as any).fill(selector, value) }
   eval(expression: string): Promise<string> { return requireStub(this.serverId).eval(expression) }

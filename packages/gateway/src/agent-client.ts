@@ -31,8 +31,8 @@ export interface BrowserHandle {
   getPageMarkdown(selector?: string): Promise<{ markdown: string; length: number } | { error: string }>
   /** Get visible text of an element or page */
   getVisibleText(selector?: string): Promise<{ text: string; length: number } | { error: string }>
-  /** Take a screenshot, returns base64 PNG */
-  screenshot(selector?: string): Promise<{ data: string; width: number; height: number } | { error: string }>
+  /** Take a screenshot. String = selector, object = options (preset, format, quality, scale, maxWidth) */
+  screenshot(selectorOrOpts?: string | { selector?: string; preset?: 'viewport' | 'element' | 'full' | 'thumb' | 'hd'; format?: 'png' | 'jpeg'; quality?: number; scale?: number; maxWidth?: number }): Promise<{ data: string; width: number; height: number } | { error: string }>
   /** Click an element by CSS selector */
   click(selector: string): Promise<{ clicked: string; tag: string } | { error: string }>
   /** Fill an input by CSS selector */
@@ -99,7 +99,7 @@ function makeBrowserHandle(getStub: () => any, whenReady: <T>(fn: () => T) => Pr
     navigate: (u: string) => whenReady(() => getStub().navigate(u)),
     getPageMarkdown: (s?: string) => whenReady(() => getStub().getPageMarkdown(s)),
     getVisibleText: (s?: string) => whenReady(() => getStub().getVisibleText(s)),
-    screenshot: (s?: string) => whenReady(() => getStub().screenshot(s)),
+    screenshot: (selectorOrOpts?: string | Record<string, any>) => whenReady(() => getStub().screenshot(selectorOrOpts)),
     click: (s: string) => whenReady(() => getStub().click(s)),
     fill: (s: string, v: string) => whenReady(() => getStub().fill(s, v)),
   }
