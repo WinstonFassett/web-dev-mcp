@@ -178,74 +178,7 @@
     return XHRSend.call(this, body)
   }
 
-  // --- React DevTools (bippy) — opt-in via __WEB_DEV_MCP_REACT__ flag ---
-  let reactTreeGetter: ((opts: any) => any) | null = null
-
-  if ((window as any).__WEB_DEV_MCP_REACT__) {
-    import('bippy').then(({ instrument, traverseFiber, getDisplayName, isCompositeFiber, traverseProps, traverseState }) => {
-      let fiberRoot: any = null
-
-      instrument({
-        onCommitFiberRoot(_rendererID: any, root: any) {
-          fiberRoot = root
-        },
-      })
-
-      function truncateValue(val: any, maxLen = 200) {
-        try {
-          const s = typeof val === 'string' ? val : JSON.stringify(val)
-          return s && s.length > maxLen ? s.slice(0, maxLen) + '\u2026' : (s ?? 'undefined')
-        } catch {
-          return String(val)
-        }
-      }
-
-      reactTreeGetter = (request: any) => {
-        const maxDepth = Math.min(request.depth ?? 8, 20)
-
-        if (!fiberRoot) {
-          return { snapshot_at: Date.now(), total_components: 0, tree: [] }
-        }
-
-        const nodes: any[] = []
-        traverseFiber(fiberRoot, (f: any) => {
-          if (!isCompositeFiber(f)) return
-
-          const name = getDisplayName(f) ?? 'Anonymous'
-          if (request.filter_name && !name.toLowerCase().includes(request.filter_name.toLowerCase())) return
-
-          const node: any = { name, children: [] }
-
-          if (request.include_props !== false) {
-            const props: any = {}
-            traverseProps(f, (propName: string, nextValue: any) => {
-              if (propName !== 'children') props[propName] = truncateValue(nextValue)
-            })
-            if (Object.keys(props).length > 0) node.props = props
-          }
-
-          if (request.include_state) {
-            const state: any = {}
-            let stateIdx = 0
-            traverseState(f, (nextValue: any) => {
-              state[`state_${stateIdx++}`] = truncateValue(nextValue)
-            })
-            if (Object.keys(state).length > 0) node.state = state
-          }
-
-          nodes.push(node)
-        })
-
-        return { snapshot_at: Date.now(), total_components: nodes.length, tree: nodes }
-      }
-
-      originalConsole.log('[web-dev-mcp] React DevTools (bippy) initialized')
-    }).catch(() => {
-      originalConsole.warn('[web-dev-mcp] bippy not available — install bippy for React DevTools')
-    })
-  }
-
-  // --- capnweb RPC (for eval/queryDom/getReactTree from server) ---
+  // --- capnweb RPC (for eval/queryDom from server) ---
   import('capnweb').then(({ RpcTarget, newWebSocketRpcSession }) => {
     {
       // browserId is hoisted to top of IIFE — shared with events WS
@@ -392,11 +325,6 @@
           const truncated = html.length > 20480
           if (truncated) html = html.slice(0, 20480) + '\n\u2026(truncated)'
           return { html, element_count: elementCount, truncated }
-        }
-
-        getReactTree(opts: any) {
-          if (reactTreeGetter) return reactTreeGetter(opts)
-          return { error: 'React DevTools not enabled. Start gateway with --react flag.' }
         }
 
         // --- Browser interaction methods ---

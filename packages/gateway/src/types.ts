@@ -1,7 +1,6 @@
 export interface GatewayOptions {
   port?: number
   network?: boolean
-  react?: boolean
   https?: boolean
   cert?: string
   key?: string

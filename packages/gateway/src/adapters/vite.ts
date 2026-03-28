@@ -15,7 +15,6 @@ const RESOLVED_VIRTUAL_MODULE_ID = '\0' + VIRTUAL_MODULE_ID
 
 export interface ViteAdapterOptions {
   gateway?: string // Gateway URL, default: http://localhost:3333
-  react?: boolean
 }
 
 export function webDevMcp(options: ViteAdapterOptions = {}): Plugin {
@@ -89,9 +88,6 @@ export function webDevMcp(options: ViteAdapterOptions = {}): Plugin {
       if (id === RESOLVED_VIRTUAL_MODULE_ID) {
         // Virtual module sets gateway origin and loads client.js via script tag
         let code = `window.__WEB_DEV_MCP_ORIGIN__ = ${JSON.stringify(gatewayUrl)};\n`
-        if (options.react) {
-          code += `window.__WEB_DEV_MCP_REACT__ = true;\n`
-        }
         code += `
 if (!window.__WEB_DEV_MCP_LOADED__) {
   const s = document.createElement('script');
