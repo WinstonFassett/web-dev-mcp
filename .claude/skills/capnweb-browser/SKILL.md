@@ -139,7 +139,7 @@ const browser = await connect('ws://localhost:3333/__rpc/agent')
 browser.document    // capnweb proxy to browser's document
 browser.window      // capnweb proxy to browser's window
 
-// Convenience methods (call browser-side functions)
+// Convenience methods
 browser.navigate(url)
 browser.getPageMarkdown(selector?)
 browser.getVisibleText(selector?)
@@ -147,5 +147,31 @@ browser.screenshot(selector?)
 browser.click(selector)
 browser.fill(selector, value)
 browser.getBrowserCount()
+browser.getBrowserList()
+browser.subscribeEvents(browserId?)  // → ReadableStream
 browser.close()
 ```
+
+## Real-time event streaming
+
+`subscribeEvents()` returns a native `ReadableStream` over capnweb. Events are pushed as they happen — console logs, errors, browser connect/disconnect.
+
+```js
+const stream = await browser.subscribeEvents()  // all events
+// or: await browser.subscribeEvents('abc123')  // filter by browser ID
+
+const reader = stream.getReader()
+while (true) {
+  const { value, done } = await reader.read()
+  if (done) break
+  console.log(value)
+  // { type: 'log', channel: 'console', payload: { level: 'log', args: [...], browserId: '...' } }
+  // { type: 'connect', connId: '...', browserId: '...' }
+  // { type: 'disconnect', connId: '...', browserId: '...' }
+}
+
+// Clean up
+reader.cancel()
+```
+
+Uses capnweb's native stream support — backpressure, multiplexing, clean disposal. Stream lives as long as the WebSocket connection.
