@@ -1,6 +1,7 @@
 <script lang="ts">
   import { initTheme, toggleTheme } from './lib/theme'
   import Dashboard from './lib/Dashboard.svelte'
+  import Repl from './lib/Repl.svelte'
 
   let theme = $state(initTheme())
   let activeTab: 'dashboard' | 'repl' = $state('dashboard')
@@ -49,7 +50,7 @@
     {#if activeTab === 'dashboard'}
       <Dashboard />
     {:else}
-      <p class="text-muted-foreground">REPL — coming soon</p>
+      <Repl />
     {/if}
   </main>
 </div>

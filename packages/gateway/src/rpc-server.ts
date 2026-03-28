@@ -219,6 +219,7 @@ export class ProjectBrowserApi extends RpcTarget {
   screenshot(selector?: string) { return (requireStub(this.serverId) as any).screenshot(selector) }
   click(selector: string) { return (requireStub(this.serverId) as any).click(selector) }
   fill(selector: string, value: string) { return (requireStub(this.serverId) as any).fill(selector, value) }
+  eval(expression: string): Promise<string> { return requireStub(this.serverId).eval(expression) }
 }
 
 // --- Gateway API (gateway-level operations) ---
