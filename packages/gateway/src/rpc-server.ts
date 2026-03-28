@@ -97,6 +97,17 @@ export function onBrowserEvent(cb: BrowserEventCallback) {
   return () => browserEventListeners.delete(cb)
 }
 
+// Log event hook — gateway calls this when browser events arrive
+type LogEventCallback = (data: { channel: string; payload: any; browserId?: string }) => void
+const logEventListeners: Set<LogEventCallback> = new Set()
+export function onLogEvent(cb: LogEventCallback) {
+  logEventListeners.add(cb)
+  return () => logEventListeners.delete(cb)
+}
+export function emitLogEvent(data: { channel: string; payload: any; browserId?: string }) {
+  for (const cb of logEventListeners) cb(data)
+}
+
 export function getBrowserStub(): RpcStub<BrowserStub> | undefined {
   if (connectionOrder.length === 0) return undefined
   const connId = connectionOrder[connectionOrder.length - 1]
@@ -231,6 +242,26 @@ export class GatewayApi extends RpcTarget {
   }
   getBrowserList() {
     return getAllBrowsers()
+  }
+  subscribeEvents(browserId?: string) {
+    let unsubLog: (() => void) | null = null
+    let unsubBrowser: (() => void) | null = null
+
+    return new ReadableStream({
+      start(controller) {
+        unsubLog = onLogEvent((data) => {
+          if (browserId && data.browserId !== browserId) return
+          controller.enqueue({ type: 'log', ...data })
+        })
+        unsubBrowser = onBrowserEvent((event, data) => {
+          controller.enqueue({ type: event, ...data })
+        })
+      },
+      cancel() {
+        unsubLog?.()
+        unsubBrowser?.()
+      }
+    })
   }
 }
 

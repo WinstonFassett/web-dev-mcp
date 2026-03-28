@@ -14,7 +14,7 @@ import { NetworkWriter } from './writers/network.js'
 import { DevEventsWriter, type BuildEventPayload } from './writers/dev-events.js'
 import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './mcp-server.js'
 import { nodeHttpBatchRpcResponse } from 'capnweb'
-import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi, onBrowserEvent } from './rpc-server.js'
+import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi, onBrowserEvent, emitLogEvent } from './rpc-server.js'
 import { handleAdmin } from './admin.js'
 import { autoRegister } from './auto-register.js'
 import { ServerRegistry, type RegisteredServer } from './registry.js'
@@ -360,8 +360,9 @@ export async function startGateway(options: GatewayOptions) {
           writers.network.write(payload)
         }
 
-        // Push to admin SSE clients
+        // Push to admin SSE clients + capnweb stream subscribers
         broadcastToAdmin('log', { channel, payload, browserId })
+        emitLogEvent({ channel, payload, browserId })
       } catch {
         // Ignore malformed messages
       }
