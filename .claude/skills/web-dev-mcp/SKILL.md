@@ -41,7 +41,8 @@ Runs JavaScript on the server with `document` and `window` as live capnweb remot
 | `state` | Persists across calls. Store capnweb refs to runtime objects (stores, globals). |
 | `browser.eval(expression)` | Run JS directly in browser (access framework internals, closures). |
 | `browser.markdown(selector?)` | Element/page to markdown with `[links](urls)` |
-| `browser.screenshot(selector?)` | PNG screenshot |
+| `browser.screenshot(selectorOrOpts?)` | Screenshot. String=selector, or `{preset, format, quality}`. Presets: viewport (default), element, thumb, full, hd. |
+| `browser.elementSource(selector)` | Map DOM element to source code. Returns `{componentName, source: {filePath, lineNumber}}`. Requires `element-source` in the app. |
 | `browser.navigate(url)` | Change page (disconnects RPC, wait before next call) |
 | `browser.click(selector)` | Click. Supports `text=` prefix for text matching. |
 | `browser.fill(selector, value)` | Fill input. Supports `text=` prefix. |
@@ -69,6 +70,18 @@ return await document.querySelector('#main-content').innerText
 
 // as HTML structure
 return await document.querySelector('#main-content').innerHTML
+```
+
+**Find source code for a DOM element:**
+```js
+// Which file/line renders this button?
+const info = await browser.elementSource('button.save')
+// → { componentName: "SaveButton", source: { filePath: "/src/SaveButton.tsx", lineNumber: 12 } }
+
+// Requires element-source installed in the app:
+// npm install element-source
+// Then in app entry: import { resolveElementInfo } from 'element-source'
+//   ;(window as any).__resolveElementInfo = resolveElementInfo
 ```
 
 **Click by text:**
