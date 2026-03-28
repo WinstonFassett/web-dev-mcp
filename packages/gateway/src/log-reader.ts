@@ -9,6 +9,7 @@ interface LogQuery {
   limit?: number
   level?: string
   search?: string
+  browserId?: string
 }
 
 interface LogResult {
@@ -54,6 +55,11 @@ export function queryLogs(files: Record<string, string>, query: LogQuery): LogRe
       if (payload.type && payload.type !== query.level) continue
     }
 
+    if (query.browserId) {
+      const payload = event.payload as Record<string, unknown>
+      if (payload.browserId !== query.browserId) continue
+    }
+
     if (query.search) {
       const serialized = JSON.stringify(event.payload)
       if (!serialized.toLowerCase().includes(query.search.toLowerCase())) continue
@@ -78,6 +84,7 @@ interface DiagnosticsQuery {
   limit?: number
   level?: string
   search?: string
+  browserId?: string
 }
 
 export function getDiagnostics(
@@ -95,7 +102,8 @@ export function getDiagnostics(
     sinceId: since_ts ? findFirstIdAfterTs(files.console, since_ts) : 0,
     limit: query.limit,
     level: query.level,
-    search: query.search
+    search: query.search,
+    browserId: query.browserId,
   })
 
   const errorsResult = queryLogs(files, {
@@ -103,14 +111,16 @@ export function getDiagnostics(
     sinceId: since_ts ? findFirstIdAfterTs(files.errors, since_ts) : 0,
     limit: query.limit,
     level: query.level,
-    search: query.search
+    search: query.search,
+    browserId: query.browserId,
   })
 
   const networkResult = queryLogs(files, {
     channel: 'network',
     sinceId: since_ts ? findFirstIdAfterTs(files.network, since_ts) : 0,
     limit: query.limit,
-    search: query.search
+    search: query.search,
+    browserId: query.browserId,
   })
 
   const summary: DiagnosticSummary = {

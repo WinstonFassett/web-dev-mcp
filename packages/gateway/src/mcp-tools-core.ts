@@ -31,6 +31,7 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
       limit: z.number().optional().describe('Max events per channel (default: 50, max: 200)'),
       level: z.string().optional().describe('Filter by level (e.g. "error", "warn")'),
       search: z.string().optional().describe('Text search across event payload (case-insensitive)'),
+      browser_id: z.string().optional().describe('Filter by browser ID'),
     },
     async (args) => {
       const logPaths = getLogPaths(ctx)
@@ -40,6 +41,7 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
         limit: args.limit,
         level: args.level,
         search: args.search,
+        browserId: args.browser_id,
       }, ctx.devEventsWriter)
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
