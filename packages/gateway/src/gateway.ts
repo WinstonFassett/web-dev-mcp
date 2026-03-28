@@ -344,13 +344,14 @@ export async function startGateway(options: GatewayOptions) {
     ws.on('message', (data) => {
       try {
         const msg = JSON.parse(data.toString())
-        const { channel, payload } = msg
+        const { channel, payload, browserId } = msg
+        // Tag payload with browser ID for filtering
+        if (browserId) payload.browserId = browserId
 
         if (channel === 'console') {
           writers.console.write(payload)
         } else if (channel === 'error') {
           writers.errors.write(payload)
-          // Push notification to MCP clients
           sendNotificationToAll('errors', payload.message ?? 'Error', session.files.errors ?? '', `get_diagnostics`)
         } else if (channel === 'network' && writers.network) {
           writers.network.write(payload)

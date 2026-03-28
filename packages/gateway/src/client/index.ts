@@ -14,6 +14,14 @@
   const gatewayHost = gatewayOrigin.replace(/^https?:\/\//, '')
   const gatewayWsProtocol = gatewayOrigin.startsWith('https') ? 'wss:' : 'ws:'
 
+  // Sticky browser ID (survives page reload within session)
+  const BROWSER_ID_KEY = '__web_dev_mcp_browser_id__'
+  let browserId = sessionStorage.getItem(BROWSER_ID_KEY)
+  if (!browserId) {
+    browserId = Math.random().toString(36).slice(2) + Date.now().toString(36)
+    sessionStorage.setItem(BROWSER_ID_KEY, browserId)
+  }
+
   // --- Events WebSocket (browser → server) ---
   let eventsWs: WebSocket | null = null
   let eventQueue: string[] = []
@@ -44,7 +52,7 @@
   }
 
   function sendEvent(channel: string, payload: any) {
-    const msg = JSON.stringify({ channel, payload })
+    const msg = JSON.stringify({ channel, payload, browserId })
     if (eventsWs && eventsWs.readyState === WebSocket.OPEN) {
       eventsWs.send(msg)
     } else {
@@ -240,16 +248,7 @@
   // --- capnweb RPC (for eval/queryDom/getReactTree from server) ---
   import('capnweb').then(({ RpcTarget, newWebSocketRpcSession }) => {
     {
-      const BROWSER_ID_KEY = '__web_dev_mcp_browser_id__'
-      function getBrowserId() {
-        let id = sessionStorage.getItem(BROWSER_ID_KEY)
-        if (!id) {
-          id = Math.random().toString(36).slice(2) + Date.now().toString(36)
-          sessionStorage.setItem(BROWSER_ID_KEY, id)
-        }
-        return id
-      }
-      const browserId = getBrowserId()
+      // browserId is hoisted to top of IIFE — shared with events WS
 
       class AnyTarget extends RpcTarget {
         #target: any
