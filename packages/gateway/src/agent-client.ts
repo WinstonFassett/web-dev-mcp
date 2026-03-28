@@ -1,33 +1,26 @@
-// Agent client — connect to gateway and get live remote DOM
+// Agent client — connect to gateway, get project-scoped browser handles
 // Auto-reconnects on disconnect.
 //
 // Usage:
 //   import { connect } from 'web-dev-mcp-gateway/agent'
-//   const browser = await connect('ws://localhost:3333/__rpc/agent')
+//   const gw = await connect('ws://localhost:3333/__rpc/agent')
+//   const browser = gw.getProject()          // latest project
 //   const title = await browser.document.title
-//   await browser.document.querySelector('a').click()
-//   browser.close()
+//   await browser.click('a')
+//   gw.close()
 
 import { RpcSession } from 'capnweb'
 import WebSocket from 'ws'
 
 interface GatewayStub {
-  document: any
-  window: any
-  localStorage: any
-  sessionStorage: any
-  navigate(url: string): Promise<{ navigated: string }>
-  getPageMarkdown(selector?: string): Promise<{ markdown: string; length: number } | { error: string }>
-  getVisibleText(selector?: string): Promise<{ text: string; length: number } | { error: string }>
-  screenshot(selector?: string): Promise<{ data: string; width: number; height: number } | { error: string }>
-  click(selector: string): Promise<{ clicked: string; tag: string } | { error: string }>
-  fill(selector: string, value: string): Promise<{ filled: string; value: string } | { error: string }>
-  subscribeEvents(browserId?: string): Promise<ReadableStream>
   getBrowserCount(): Promise<number>
-  getBrowserList(): Promise<Array<{ connId: string; browserId: string | null }>>
+  getBrowserList(): Promise<Array<{ connId: string; browserId: string | null; serverId: string | null }>>
+  listProjects(): Promise<string[]>
+  getProject(serverId?: string): any  // Returns ProjectBrowserApi stub
+  subscribeEvents(browserId?: string): Promise<ReadableStream>
 }
 
-export interface BrowserConnection {
+export interface BrowserHandle {
   /** Remote document — chain DOM calls directly */
   document: any
   /** Remote window object */
@@ -44,12 +37,19 @@ export interface BrowserConnection {
   click(selector: string): Promise<{ clicked: string; tag: string } | { error: string }>
   /** Fill an input by CSS selector */
   fill(selector: string, value: string): Promise<{ filled: string; value: string } | { error: string }>
-  /** Subscribe to real-time event stream */
-  subscribeEvents(browserId?: string): Promise<ReadableStream>
+}
+
+export interface GatewayConnection {
   /** How many browsers are connected */
   getBrowserCount(): Promise<number>
   /** List connected browsers */
-  getBrowserList(): Promise<Array<{ connId: string; browserId: string | null }>>
+  getBrowserList(): Promise<Array<{ connId: string; browserId: string | null; serverId: string | null }>>
+  /** List registered project server IDs */
+  listProjects(): Promise<string[]>
+  /** Get a project-scoped browser handle. No arg = latest project. */
+  getProject(serverId?: string): BrowserHandle
+  /** Subscribe to real-time event stream */
+  subscribeEvents(browserId?: string): Promise<ReadableStream>
   /** Close the connection (no auto-reconnect) */
   close(): void
 }
@@ -92,7 +92,20 @@ function createTransport(ws: WebSocket) {
   }
 }
 
-export function connect(url: string): Promise<BrowserConnection> {
+function makeBrowserHandle(getStub: () => any, whenReady: <T>(fn: () => T) => Promise<Awaited<T>>): BrowserHandle {
+  return {
+    get document() { return getStub().document },
+    get window() { return getStub().window },
+    navigate: (u: string) => whenReady(() => getStub().navigate(u)),
+    getPageMarkdown: (s?: string) => whenReady(() => getStub().getPageMarkdown(s)),
+    getVisibleText: (s?: string) => whenReady(() => getStub().getVisibleText(s)),
+    screenshot: (s?: string) => whenReady(() => getStub().screenshot(s)),
+    click: (s: string) => whenReady(() => getStub().click(s)),
+    fill: (s: string, v: string) => whenReady(() => getStub().fill(s, v)),
+  }
+}
+
+export function connect(url: string): Promise<GatewayConnection> {
   let gw: any = null
   let ws: WebSocket | null = null
   let closed = false
@@ -139,18 +152,27 @@ export function connect(url: string): Promise<BrowserConnection> {
     return fn() as any
   }
 
-  return doConnect().then(() => ({
-    get document() { return gw.document },
-    get window() { return gw.window },
-    navigate: (u: string) => whenReady(() => gw.navigate(u)),
-    getPageMarkdown: (s?: string) => whenReady(() => gw.getPageMarkdown(s)),
-    getVisibleText: (s?: string) => whenReady(() => gw.getVisibleText(s)),
-    screenshot: (s?: string) => whenReady(() => gw.screenshot(s)),
-    click: (s: string) => whenReady(() => gw.click(s)),
-    fill: (s: string, v: string) => whenReady(() => gw.fill(s, v)),
-    subscribeEvents: (b?: string) => whenReady(() => gw.subscribeEvents(b)),
+  // Cache project handles so repeated getProject() calls reuse the same stub
+  const projectCache = new Map<string, BrowserHandle>()
+
+  return doConnect().then((): GatewayConnection => ({
     getBrowserCount: () => whenReady(() => gw.getBrowserCount()),
     getBrowserList: () => whenReady(() => gw.getBrowserList()),
+    listProjects: () => whenReady(() => gw.listProjects()),
+    getProject(serverId?: string) {
+      const key = serverId ?? '__latest__'
+      let handle = projectCache.get(key)
+      if (!handle) {
+        // Get the remote ProjectBrowserApi stub — live reference via getter
+        handle = makeBrowserHandle(
+          () => gw.getProject(serverId),
+          whenReady,
+        )
+        projectCache.set(key, handle)
+      }
+      return handle
+    },
+    subscribeEvents: (b?: string) => whenReady(() => gw.subscribeEvents(b)),
     close: () => { closed = true; ws?.close() },
   }))
 }

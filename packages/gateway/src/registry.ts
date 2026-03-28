@@ -2,16 +2,46 @@
  * Server Registry - tracks dev servers registered with the gateway
  */
 
+import { createHash } from 'node:crypto'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 export interface RegisteredServer {
-  id: string              // "vite-5173" or "nextjs-3000"
+  id: string              // sha256(directory).slice(0,8)
+  directory: string       // Absolute project path (required)
   type: 'vite' | 'nextjs' | 'generic'
   port: number
   pid: number
   name?: string           // Optional friendly name
   rpcEndpoint?: string    // ws://localhost:5173/__rpc
   mcpEndpoint?: string    // http://localhost:5173/__mcp/sse (for native MCP)
-  logPaths?: Record<string, string>  // Channel → file path
+  logPaths: Record<string, string>  // Channel → file path (always populated)
+  logDir: string          // Absolute path to project's .web-dev-mcp/
   registeredAt: number
+}
+
+/** Generate a stable server ID from a directory path */
+export function serverIdFromDirectory(directory: string): string {
+  return createHash('sha256').update(directory).digest('hex').slice(0, 8)
+}
+
+/** Create per-project log directory and return channel file paths */
+export function initProjectLogDir(
+  directory: string,
+  channels: string[] = ['console', 'errors', 'dev-events'],
+): { logDir: string; logPaths: Record<string, string> } {
+  const logDir = join(directory, '.web-dev-mcp')
+  mkdirSync(logDir, { recursive: true })
+
+  const logPaths: Record<string, string> = {}
+  for (const ch of channels) {
+    const filePath = join(logDir, `${ch}.ndjson`)
+    logPaths[ch] = filePath
+    // Truncate on registration (fresh session)
+    writeFileSync(filePath, '')
+  }
+
+  return { logDir, logPaths }
 }
 
 export class ServerRegistry {
@@ -28,7 +58,7 @@ export class ServerRegistry {
     }
     this.connectionOrder.push(server.id)
 
-    console.log(`[registry] Registered: ${server.id} (${server.type}) at :${server.port}`)
+    console.log(`[registry] Registered: ${server.id} (${server.type}) dir=${server.directory}`)
   }
 
   remove(id: string): void {
@@ -44,6 +74,11 @@ export class ServerRegistry {
   }
 
   get(id: string): RegisteredServer | undefined {
+    return this.servers.get(id)
+  }
+
+  getByDirectory(directory: string): RegisteredServer | undefined {
+    const id = serverIdFromDirectory(directory)
     return this.servers.get(id)
   }
 

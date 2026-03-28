@@ -12,6 +12,7 @@ export interface McpContext {
   connectedClients: number
   devEventsWriter?: DevEventsWriter
   registry?: ServerRegistry
+  projectDir?: string  // Set from ?project= query param — scopes logs + browser to this project
 }
 
 type Toolset = 'core' | 'full'
@@ -58,9 +59,13 @@ export function createMcpMiddleware(
       // Parse toolset from query: /__mcp/sse?tools=full
       const urlObj = new URL(url, 'http://localhost')
       const toolset = (urlObj.searchParams.get('tools') as Toolset) || 'core'
+      const projectDir = urlObj.searchParams.get('project') || undefined
+
+      // Create a per-session context with project scoping
+      const sessionCtx: McpContext = { ...ctx, projectDir }
 
       const transport = new SSEServerTransport(`${mcpPath}/message`, res)
-      const server = createMcpServerInstance(ctx, toolset)
+      const server = createMcpServerInstance(sessionCtx, toolset)
 
       connections.set(transport.sessionId, { transport, server })
       ctx.connectedClients++

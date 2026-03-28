@@ -14,10 +14,22 @@ export const sessionStates = new Map<string, Record<string, any>>()
 
 export function getLogPaths(ctx: McpContext): Record<string, string> {
   if (ctx.registry) {
-    const latestServer = ctx.registry.getLatest()
-    if (latestServer?.logPaths) return latestServer.logPaths
+    // If project-scoped, look up by directory; otherwise use latest
+    const server = ctx.projectDir
+      ? ctx.registry.getByDirectory(ctx.projectDir)
+      : ctx.registry.getLatest()
+    if (server?.logPaths) return server.logPaths
   }
   return ctx.session.files
+}
+
+/** Get the serverId for the current MCP context (for scoping browser stubs) */
+export function getServerId(ctx: McpContext): string | undefined {
+  if (!ctx.registry) return undefined
+  const server = ctx.projectDir
+    ? ctx.registry.getByDirectory(ctx.projectDir)
+    : ctx.registry.getLatest()
+  return server?.id
 }
 
 export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
@@ -78,9 +90,11 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
       code: z.string().describe('JavaScript code. Globals: `document`, `window` (capnweb proxies), `state` (persists across calls — store refs here), `browser` (helpers: .markdown(sel?), .screenshot(sel?), .navigate(url), .click(sel), .fill(sel, val), .waitFor(fnOrSel, interval?, timeout?), .eval(expr)). Use `await` to read values.'),
     },
     async (args, extra) => {
-      const stub = getBrowserStub()
+      const serverId = getServerId(ctx)
+      const stub = getBrowserStub(serverId)
       if (!stub) {
-        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: 'No browser connected' }) }], isError: true }
+        const scopeMsg = serverId ? ` for server ${serverId}` : ''
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `No browser connected${scopeMsg}` }) }], isError: true }
       }
       try {
         const start = Date.now()

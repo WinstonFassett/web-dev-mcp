@@ -17,7 +17,7 @@ import { nodeHttpBatchRpcResponse } from 'capnweb'
 import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi, onBrowserEvent, emitLogEvent } from './rpc-server.js'
 import { handleAdmin } from './admin.js'
 import { autoRegister } from './auto-register.js'
-import { ServerRegistry, type RegisteredServer } from './registry.js'
+import { ServerRegistry, type RegisteredServer, serverIdFromDirectory, initProjectLogDir } from './registry.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -120,6 +120,9 @@ export async function startGateway(options: GatewayOptions) {
     writers.network = new NetworkWriter(session.files.network, options.maxFileSizeMb)
   }
 
+  // Per-project writers (populated when servers register)
+  const projectWriters = new Map<string, Writers>()
+
   // MCP context
   const mcpCtx: McpContext = {
     session,
@@ -160,34 +163,50 @@ export async function startGateway(options: GatewayOptions) {
       req.on('data', chunk => { body += chunk.toString() })
       req.on('end', () => {
         try {
-          const data = JSON.parse(body) as Partial<RegisteredServer>
+          const data = JSON.parse(body)
 
-          if (!data.type || !data.port || !data.pid) {
+          if (!data.type || !data.port || !data.pid || !data.directory) {
             res.writeHead(400, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: 'Missing required fields: type, port, pid' }))
+            res.end(JSON.stringify({ error: 'Missing required fields: type, port, pid, directory' }))
             return
           }
 
+          // Create per-project log directory
+          const channels = ['console', 'errors', 'dev-events']
+          if (options.network) channels.push('network')
+          const { logDir, logPaths } = initProjectLogDir(data.directory, channels)
+
           const server: RegisteredServer = {
-            id: `${data.type}-${data.port}`,
+            id: serverIdFromDirectory(data.directory),
+            directory: data.directory,
             type: data.type as RegisteredServer['type'],
             port: data.port,
             pid: data.pid,
             name: data.name,
             rpcEndpoint: data.rpcEndpoint,
             mcpEndpoint: data.mcpEndpoint,
-            logPaths: data.logPaths,
+            logPaths,
+            logDir,
             registeredAt: Date.now(),
           }
 
           registry.add(server)
 
+          // Create per-project writers
+          projectWriters.set(server.id, {
+            console: new ConsoleWriter(logPaths.console, options.maxFileSizeMb),
+            errors: new ErrorsWriter(logPaths.errors, options.maxFileSizeMb),
+            devEvents: new DevEventsWriter(logPaths['dev-events'], options.maxFileSizeMb),
+            network: logPaths.network ? new NetworkWriter(logPaths.network, options.maxFileSizeMb) : undefined,
+          })
+
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({
             success: true,
+            serverId: server.id,
+            logDir,
             gatewayMcpUrl: `${serverUrl}${mcpPath}/sse`,
             gatewayRpcUrl: `${serverUrl.replace('http', 'ws')}/__rpc`,
-            serverId: server.id,
           }))
         } catch (err) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -212,6 +231,7 @@ export async function startGateway(options: GatewayOptions) {
       const serverId = url.split('/').pop()
       if (serverId && registry.has(serverId)) {
         registry.remove(serverId)
+        projectWriters.delete(serverId)
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ success: true }))
       } else {
@@ -343,7 +363,12 @@ export async function startGateway(options: GatewayOptions) {
     }
   })
 
-  eventsWss.on('connection', (ws) => {
+  eventsWss.on('connection', (ws, request) => {
+    // Parse serverId from query param so events route to the right project writers
+    const reqUrl = (request as any).url ?? ''
+    const serverMatch = reqUrl.match(/[?&]server=([^&]+)/)
+    const serverId = serverMatch ? decodeURIComponent(serverMatch[1]) : null
+
     ws.on('message', (data) => {
       try {
         const msg = JSON.parse(data.toString())
@@ -351,13 +376,17 @@ export async function startGateway(options: GatewayOptions) {
         // Tag payload with browser ID for filtering
         if (browserId) payload.browserId = browserId
 
+        // Use project-specific writers if available, fall back to gateway writers
+        const w = (serverId && projectWriters.get(serverId)) || writers
+
         if (channel === 'console') {
-          writers.console.write(payload)
+          w.console.write(payload)
         } else if (channel === 'error') {
-          writers.errors.write(payload)
-          sendNotificationToAll('errors', payload.message ?? 'Error', session.files.errors ?? '', `get_diagnostics`)
-        } else if (channel === 'network' && writers.network) {
-          writers.network.write(payload)
+          w.errors.write(payload)
+          const logFile = (serverId && registry.get(serverId)?.logPaths?.errors) ?? session.files.errors ?? ''
+          sendNotificationToAll('errors', payload.message ?? 'Error', logFile, `get_diagnostics`)
+        } else if (channel === 'network' && w.network) {
+          w.network.write(payload)
         }
 
         // Push to admin SSE clients + capnweb stream subscribers
@@ -369,16 +398,23 @@ export async function startGateway(options: GatewayOptions) {
     })
   })
 
-  devEventsWss.on('connection', (ws) => {
-    console.log('[web-dev-mcp] Dev adapter connected')
+  devEventsWss.on('connection', (ws, request) => {
+    // Parse serverId from query param
+    const reqUrl = (request as any).url ?? ''
+    const serverMatch = reqUrl.match(/[?&]server=([^&]+)/)
+    const serverId = serverMatch ? decodeURIComponent(serverMatch[1]) : null
+
+    console.log(`[web-dev-mcp] Dev adapter connected${serverId ? ` (server: ${serverId})` : ''}`)
 
     ws.on('message', (data) => {
       try {
         const payload = JSON.parse(data.toString()) as BuildEventPayload
-        writers.devEvents.write(payload)
+        const w = (serverId && projectWriters.get(serverId)) || writers
+        w.devEvents.write(payload)
 
         if (payload.type === 'build:error') {
-          sendNotificationToAll('build', payload.error ?? 'Build error', session.files['dev-events'] ?? '', `get_build_status`)
+          const logFile = (serverId && registry.get(serverId)?.logPaths?.['dev-events']) ?? session.files['dev-events'] ?? ''
+          sendNotificationToAll('build', payload.error ?? 'Build error', logFile, `get_build_status`)
         }
       } catch {
         // Ignore malformed messages
@@ -386,7 +422,7 @@ export async function startGateway(options: GatewayOptions) {
     })
 
     ws.on('close', () => {
-      console.log('[web-dev-mcp] Dev adapter disconnected')
+      console.log(`[web-dev-mcp] Dev adapter disconnected${serverId ? ` (server: ${serverId})` : ''}`)
     })
   })
 

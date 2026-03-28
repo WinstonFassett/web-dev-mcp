@@ -108,7 +108,16 @@ export function emitLogEvent(data: { channel: string; payload: any; browserId?: 
   for (const cb of logEventListeners) cb(data)
 }
 
-export function getBrowserStub(): RpcStub<BrowserStub> | undefined {
+/** Get the latest browser stub, optionally filtered by serverId */
+export function getBrowserStub(serverId?: string): RpcStub<BrowserStub> | undefined {
+  if (serverId) {
+    // Find latest browser for this specific server
+    for (let i = connectionOrder.length - 1; i >= 0; i--) {
+      const conn = browsers.get(connectionOrder[i])
+      if (conn?.serverId === serverId) return conn.stub
+    }
+    return undefined
+  }
   if (connectionOrder.length === 0) return undefined
   const connId = connectionOrder[connectionOrder.length - 1]
   return browsers.get(connId)?.stub
@@ -183,66 +192,59 @@ export function setupRpcWebSocket(httpServer: { on(event: string, listener: (...
   return wss
 }
 
-// --- Agent RPC endpoint ---
-// Agents connect here and get a GatewayApi that proxies to the browser's document/window
+// --- Browser API (project-scoped browser interaction) ---
+
+function requireStub(serverId?: string): RpcStub<BrowserStub> {
+  const stub = getBrowserStub(serverId)
+  if (!stub) throw new Error(serverId ? `No browser connected for server ${serverId}` : 'No browser connected')
+  return stub
+}
+
+export class ProjectBrowserApi extends RpcTarget {
+  private serverId?: string
+
+  constructor(serverId?: string) {
+    super()
+    this.serverId = serverId
+  }
+
+  get document() { return (requireStub(this.serverId) as any).document }
+  get window() { return (requireStub(this.serverId) as any).window }
+  get localStorage() { return (requireStub(this.serverId) as any).localStorage }
+  get sessionStorage() { return (requireStub(this.serverId) as any).sessionStorage }
+
+  navigate(url: string) { return (requireStub(this.serverId) as any).navigate(url) }
+  getPageMarkdown(selector?: string) { return (requireStub(this.serverId) as any).getPageMarkdown(selector) }
+  getVisibleText(selector?: string) { return (requireStub(this.serverId) as any).getVisibleText(selector) }
+  screenshot(selector?: string) { return (requireStub(this.serverId) as any).screenshot(selector) }
+  click(selector: string) { return (requireStub(this.serverId) as any).click(selector) }
+  fill(selector: string, value: string) { return (requireStub(this.serverId) as any).fill(selector, value) }
+}
+
+// --- Gateway API (gateway-level operations) ---
 
 export class GatewayApi extends RpcTarget {
-  get document() {
-    const stub = getBrowserStub()
-    if (!stub) throw new Error('No browser connected')
-    return (stub as any).document
-  }
-  get window() {
-    const stub = getBrowserStub()
-    if (!stub) throw new Error('No browser connected')
-    return (stub as any).window
-  }
-  get localStorage() {
-    const stub = getBrowserStub()
-    if (!stub) throw new Error('No browser connected')
-    return (stub as any).localStorage
-  }
-  get sessionStorage() {
-    const stub = getBrowserStub()
-    if (!stub) throw new Error('No browser connected')
-    return (stub as any).sessionStorage
-  }
-  navigate(url: string) {
-    const stub = getBrowserStub()
-    if (!stub) throw new Error('No browser connected')
-    return (stub as any).navigate(url)
-  }
-  getPageMarkdown(selector?: string) {
-    const stub = getBrowserStub()
-    if (!stub) throw new Error('No browser connected')
-    return (stub as any).getPageMarkdown(selector)
-  }
-  getVisibleText(selector?: string) {
-    const stub = getBrowserStub()
-    if (!stub) throw new Error('No browser connected')
-    return (stub as any).getVisibleText(selector)
-  }
-  screenshot(selector?: string) {
-    const stub = getBrowserStub()
-    if (!stub) throw new Error('No browser connected')
-    return (stub as any).screenshot(selector)
-  }
-  click(selector: string) {
-    const stub = getBrowserStub()
-    if (!stub) throw new Error('No browser connected')
-    return (stub as any).click(selector)
-  }
-  fill(selector: string, value: string) {
-    const stub = getBrowserStub()
-    if (!stub) throw new Error('No browser connected')
-    return (stub as any).fill(selector, value)
-  }
   getBrowserCount() {
     return browsers.size
   }
+
   getBrowserList() {
     return getAllBrowsers()
   }
+
+  listProjects() {
+    const serverIds = new Set<string>()
+    for (const conn of browsers.values()) {
+      if (conn.serverId) serverIds.add(conn.serverId)
+    }
+    return Array.from(serverIds)
+  }
+
+  /** Get a project-scoped browser handle */
+  getProject(serverId?: string): ProjectBrowserApi {
+    return new ProjectBrowserApi(serverId)
+  }
+
   subscribeEvents(browserId?: string) {
     let unsubLog: (() => void) | null = null
     let unsubBrowser: (() => void) | null = null

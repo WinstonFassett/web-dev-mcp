@@ -27,8 +27,11 @@
   let eventQueue: string[] = []
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
+  const serverId = (window as any).__WEB_DEV_MCP_SERVER__ || null
+
   function connectEvents() {
-    const url = gatewayWsProtocol + '//' + gatewayHost + '/__events'
+    let url = gatewayWsProtocol + '//' + gatewayHost + '/__events'
+    if (serverId) url += '?server=' + encodeURIComponent(serverId)
     eventsWs = new WebSocket(url)
 
     eventsWs.onopen = () => {
