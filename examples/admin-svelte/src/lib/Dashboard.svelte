@@ -1,13 +1,15 @@
 <script lang="ts">
   import { connectGateway, type GatewayConnection } from './gateway'
-  import { fetchAdminData, type AdminData, type BrowserInfo } from './api'
+  import { fetchAdminData, type AdminData, type BrowserInfo, type ServerInfo } from './api'
   import StatCard from './StatCard.svelte'
   import LogStream from './LogStream.svelte'
+  import ProjectDetail from './ProjectDetail.svelte'
 
   let data: AdminData | null = $state(null)
   let error: string | null = $state(null)
   let gw: GatewayConnection | null = $state(null)
   let source: 'capnweb' | 'fetch' | null = $state(null)
+  let selectedServer: ServerInfo | null = $state(null)
 
   function formatUptime(ms: number): string {
     if (ms < 60_000) return `${Math.round(ms / 1000)}s`
@@ -92,7 +94,13 @@
   </div>
 {/if}
 
-{#if data}
+{#if selectedServer && data}
+  <ProjectDetail
+    server={selectedServer}
+    browsers={data.browsers}
+    onBack={() => (selectedServer = null)}
+  />
+{:else if data}
   <!-- Stats -->
   <div class="grid grid-cols-2 gap-3 sm:grid-cols-5 mb-6">
     <StatCard label="Uptime" value={formatUptime(data.uptime_ms)} />
@@ -153,7 +161,10 @@
           </thead>
           <tbody>
             {#each data.servers as s}
-              <tr class="border-b border-border last:border-b-0 hover:bg-muted/30">
+              <tr
+                class="border-b border-border last:border-b-0 hover:bg-muted/30 cursor-pointer"
+                onclick={() => (selectedServer = s)}
+              >
                 <td class="px-3 py-2 font-mono text-xs">{s.id}</td>
                 <td class="px-3 py-2">{s.type}</td>
                 <td class="px-3 py-2">{s.port}</td>
