@@ -1,14 +1,19 @@
 /**
  * Server Registry - tracks dev servers registered with the gateway
+ *
+ * Identity model:
+ *   Project = directory path (persistent scope)
+ *   Server  = PID string (ephemeral instance, belongs to a project)
+ *   Browser = random uid (belongs to a server instance)
  */
 
 import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 
 export interface RegisteredServer {
-  id: string              // sha256(directory).slice(0,8)
-  directory: string       // Absolute project path (required)
+  id: string              // PID string — ephemeral instance identity
+  directory: string       // Absolute project path (persistent scope)
   type: 'vite' | 'nextjs' | 'generic'
   port: number
   pid: number
@@ -20,9 +25,9 @@ export interface RegisteredServer {
   registeredAt: number
 }
 
-/** Generate a stable server ID from a directory path */
-export function serverIdFromDirectory(directory: string): string {
-  return createHash('sha256').update(directory).digest('hex').slice(0, 8)
+/** Server instance ID = PID (always available, always correct) */
+export function makeServerId(pid: number): string {
+  return String(pid)
 }
 
 /** Create per-project log directory and return channel file paths */
@@ -45,11 +50,19 @@ export function initProjectLogDir(
 }
 
 export class ServerRegistry {
-  private servers = new Map<string, RegisteredServer>()
+  private servers = new Map<string, RegisteredServer>()       // server ID → server
+  private directoryIndex = new Map<string, string>()          // directory → server ID
   private connectionOrder: string[] = []
 
   add(server: RegisteredServer): void {
+    // If this project directory already has a server, remove the old one (re-registration)
+    const existingId = this.directoryIndex.get(server.directory)
+    if (existingId && existingId !== server.id) {
+      this.remove(existingId)
+    }
+
     this.servers.set(server.id, server)
+    this.directoryIndex.set(server.directory, server.id)
 
     // Track connection order
     const index = this.connectionOrder.indexOf(server.id)
@@ -65,11 +78,15 @@ export class ServerRegistry {
     const server = this.servers.get(id)
     if (server) {
       this.servers.delete(id)
+      // Clean up directory index if it still points to this server
+      if (this.directoryIndex.get(server.directory) === id) {
+        this.directoryIndex.delete(server.directory)
+      }
       const index = this.connectionOrder.indexOf(id)
       if (index !== -1) {
         this.connectionOrder.splice(index, 1)
       }
-      console.log(`[registry] Removed: ${id}`)
+      console.log(`[registry] Removed: ${id} (dir=${server.directory})`)
     }
   }
 
@@ -78,7 +95,8 @@ export class ServerRegistry {
   }
 
   getByDirectory(directory: string): RegisteredServer | undefined {
-    const id = serverIdFromDirectory(directory)
+    const id = this.directoryIndex.get(directory)
+    if (!id) return undefined
     return this.servers.get(id)
   }
 
@@ -106,6 +124,11 @@ export class ServerRegistry {
 
   size(): number {
     return this.servers.size
+  }
+
+  /** List all registered project directories */
+  directories(): string[] {
+    return Array.from(this.directoryIndex.keys())
   }
 
   /**

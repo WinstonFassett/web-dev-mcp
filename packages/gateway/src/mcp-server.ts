@@ -48,6 +48,48 @@ export function sendNotificationToAll(channel: string, message: string, file: st
   }
 }
 
+/**
+ * After MCP connect, ask the client for its workspace roots via roots/list.
+ * Match against registered project directories to auto-resolve project scope.
+ * Picks the most specific (deepest) matching directory.
+ */
+async function resolveProjectFromRoots(mcp: McpServer, ctx: McpContext): Promise<void> {
+  const registry = ctx.registry
+  if (!registry || registry.size() === 0) return
+
+  const result = await mcp.server.listRoots()
+  if (!result?.roots?.length) return
+
+  const registeredDirs = registry.directories()
+
+  // Convert root URIs to paths and find the best match
+  let bestMatch: string | undefined
+  let bestDepth = -1
+
+  for (const root of result.roots) {
+    let rootPath: string
+    try {
+      rootPath = root.uri.startsWith('file://') ? decodeURIComponent(root.uri.slice(7)) : root.uri
+    } catch { continue }
+
+    for (const dir of registeredDirs) {
+      // Project dir is inside or equal to root
+      if (dir.startsWith(rootPath) || rootPath.startsWith(dir)) {
+        const depth = dir.split('/').length
+        if (depth > bestDepth) {
+          bestMatch = dir
+          bestDepth = depth
+        }
+      }
+    }
+  }
+
+  if (bestMatch) {
+    ctx.projectDir = bestMatch
+    console.log(`[web-dev-mcp] Auto-resolved project from roots: ${bestMatch}`)
+  }
+}
+
 export function createMcpMiddleware(
   mcpPath: string,
   ctx: McpContext,
@@ -76,7 +118,14 @@ export function createMcpMiddleware(
         ctx.connectedClients = Math.max(0, ctx.connectedClients - 1)
       }
 
-      server.connect(transport).catch((err) => {
+      server.connect(transport).then(() => {
+        // After connection, try to auto-resolve project from client roots
+        if (!sessionCtx.projectDir && sessionCtx.registry) {
+          resolveProjectFromRoots(server, sessionCtx).catch(() => {
+            // Client may not support roots/list — that's fine
+          })
+        }
+      }).catch((err) => {
         console.error('[web-dev-mcp] SSE connection error:', err)
       })
       return

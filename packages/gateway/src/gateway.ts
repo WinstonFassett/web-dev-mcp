@@ -18,7 +18,7 @@ import { nodeHttpBatchRpcResponse } from 'capnweb'
 import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi, onBrowserEvent, emitLogEvent } from './rpc-server.js'
 import { handleAdmin } from './admin.js'
 import { autoRegister } from './auto-register.js'
-import { ServerRegistry, type RegisteredServer, serverIdFromDirectory, initProjectLogDir } from './registry.js'
+import { ServerRegistry, type RegisteredServer, makeServerId, initProjectLogDir } from './registry.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -199,7 +199,7 @@ export async function startGateway(options: GatewayOptions) {
           const { logDir, logPaths } = initProjectLogDir(data.directory, channels)
 
           const server: RegisteredServer = {
-            id: serverIdFromDirectory(data.directory),
+            id: data.id || makeServerId(data.pid),
             directory: data.directory,
             type: data.type as RegisteredServer['type'],
             port: data.port,
@@ -214,8 +214,8 @@ export async function startGateway(options: GatewayOptions) {
 
           registry.add(server)
 
-          // Create per-project writers
-          projectWriters.set(server.id, {
+          // Create per-project writers (keyed by directory — logs are project-scoped)
+          projectWriters.set(server.directory, {
             console: new ConsoleWriter(logPaths.console, options.maxFileSizeMb),
             errors: new ErrorsWriter(logPaths.errors, options.maxFileSizeMb),
             devEvents: new DevEventsWriter(logPaths['dev-events'], options.maxFileSizeMb),
@@ -253,8 +253,9 @@ export async function startGateway(options: GatewayOptions) {
       addCorsHeaders(res)
       const serverId = url.split('/').pop()
       if (serverId && registry.has(serverId)) {
+        const server = registry.get(serverId)
         registry.remove(serverId)
-        projectWriters.delete(serverId)
+        if (server) projectWriters.delete(server.directory)
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ success: true }))
       } else {
@@ -387,10 +388,11 @@ export async function startGateway(options: GatewayOptions) {
   })
 
   eventsWss.on('connection', (ws, request) => {
-    // Parse serverId from query param so events route to the right project writers
+    // Parse serverId from query param, resolve to project directory for writer routing
     const reqUrl = (request as any).url ?? ''
     const serverMatch = reqUrl.match(/[?&]server=([^&]+)/)
     const serverId = serverMatch ? decodeURIComponent(serverMatch[1]) : null
+    const projectDir = serverId ? registry.get(serverId)?.directory : null
 
     ws.on('message', (data) => {
       try {
@@ -400,18 +402,20 @@ export async function startGateway(options: GatewayOptions) {
         if (browserId) payload.browserId = browserId
 
         // Use project-specific writers if available, fall back to gateway writers
-        const w = (serverId && projectWriters.get(serverId)) || writers
+        const w = (projectDir && projectWriters.get(projectDir)) || writers
 
         if (channel === 'console') {
           w.console.write(payload)
         } else if (channel === 'error') {
           w.errors.write(payload)
-          const logFile = (serverId && registry.get(serverId)?.logPaths?.errors) ?? session.files.errors ?? ''
+          const server = serverId ? registry.get(serverId) : null
+          const logFile = server?.logPaths?.errors ?? session.files.errors ?? ''
           sendNotificationToAll('errors', payload.message ?? 'Error', logFile, `get_diagnostics`)
         } else if (channel === 'server-console') {
           w.serverConsole.write(payload)
           if (payload.level === 'error') {
-            const logFile = (serverId && registry.get(serverId)?.logPaths?.['server-console']) ?? session.files['server-console'] ?? ''
+            const server = serverId ? registry.get(serverId) : null
+            const logFile = server?.logPaths?.['server-console'] ?? session.files['server-console'] ?? ''
             sendNotificationToAll('server', payload.args?.join(' ') ?? 'Server error', logFile, `get_diagnostics`)
           }
         } else if (channel === 'network' && w.network) {
@@ -428,21 +432,23 @@ export async function startGateway(options: GatewayOptions) {
   })
 
   devEventsWss.on('connection', (ws, request) => {
-    // Parse serverId from query param
+    // Parse serverId from query param, resolve to project directory
     const reqUrl = (request as any).url ?? ''
     const serverMatch = reqUrl.match(/[?&]server=([^&]+)/)
     const serverId = serverMatch ? decodeURIComponent(serverMatch[1]) : null
+    const projectDir = serverId ? registry.get(serverId)?.directory : null
 
     console.log(`[web-dev-mcp] Dev adapter connected${serverId ? ` (server: ${serverId})` : ''}`)
 
     ws.on('message', (data) => {
       try {
         const payload = JSON.parse(data.toString()) as BuildEventPayload
-        const w = (serverId && projectWriters.get(serverId)) || writers
+        const w = (projectDir && projectWriters.get(projectDir)) || writers
         w.devEvents.write(payload)
 
         if (payload.type === 'build:error') {
-          const logFile = (serverId && registry.get(serverId)?.logPaths?.['dev-events']) ?? session.files['dev-events'] ?? ''
+          const server = serverId ? registry.get(serverId) : null
+          const logFile = server?.logPaths?.['dev-events'] ?? session.files['dev-events'] ?? ''
           sendNotificationToAll('build', payload.error ?? 'Build error', logFile, `get_build_status`)
         }
       } catch {

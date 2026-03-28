@@ -18,8 +18,10 @@ export interface ViteAdapterOptions {
 function registerWithGateway(
   gatewayUrl: string,
   config: ResolvedConfig,
+  serverId: string,
 ): Promise<{ serverId: string; logDir: string } | null> {
   const body = JSON.stringify({
+    id: serverId,
     type: 'vite',
     port: config.server.port ?? 5173,
     pid: process.pid,
@@ -137,20 +139,34 @@ export function webDevMcp(options: ViteAdapterOptions = {}): Plugin {
 
     configResolved(config) {
       resolvedConfig = config
+      // Compute server ID locally — always available, no async needed
+      serverId = String(process.pid)
       ;(config.server as any).forwardConsole = false
     },
 
     async configureServer(server) {
-      // Register with gateway (non-blocking — adapter works without it)
-      if (resolvedConfig) {
-        const result = await registerWithGateway(gatewayUrl, resolvedConfig).catch(() => null)
+      // serverId already set in configResolved — start console capture immediately
+      patchConsole(gatewayUrl, serverId!)
+
+      // Register with gateway — retry if gateway isn't up yet
+      let registered = false
+      let retryTimer: ReturnType<typeof setInterval> | null = null
+
+      async function tryRegister() {
+        if (!resolvedConfig || registered) return
+        const result = await registerWithGateway(gatewayUrl, resolvedConfig, serverId!).catch(() => null)
         if (result) {
-          serverId = result.serverId
+          registered = true
+          if (retryTimer) { clearInterval(retryTimer); retryTimer = null }
           _internalLogging = true
           console.log(`  [web-dev-mcp] Registered with gateway (server: ${serverId}, logs: ${result.logDir})`)
           _internalLogging = false
-          patchConsole(gatewayUrl, serverId)
         }
+      }
+
+      await tryRegister()
+      if (!registered) {
+        retryTimer = setInterval(tryRegister, 5000)
       }
 
       connectDevEvents()

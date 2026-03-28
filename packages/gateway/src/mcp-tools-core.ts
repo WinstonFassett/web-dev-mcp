@@ -12,24 +12,62 @@ import { getBrowserStub } from './rpc-server.js'
 // Agent stores refs like state.store = window.__REDUX_STORE__ and uses them in later calls
 export const sessionStates = new Map<string, Record<string, any>>()
 
+/**
+ * Resolve the server for the current MCP context.
+ *
+ * Resolution chain:
+ *   ?project=<dir> → registry lookup by directory → server
+ *   no ?project=, 1 server registered → use it (auto-resolve)
+ *   no ?project=, 0 servers → undefined (unscoped, gateway-level)
+ *   no ?project=, N servers → { ambiguous: true, projects: [...] }
+ */
+export type ResolvedServer =
+  | { server: import('./registry.js').RegisteredServer; ambiguous?: never }
+  | { server?: never; ambiguous: true; projects: string[] }
+
+export function resolveServer(ctx: McpContext): ResolvedServer | undefined {
+  if (!ctx.registry) return undefined
+
+  if (ctx.projectDir) {
+    const server = ctx.registry.getByDirectory(ctx.projectDir)
+    if (server) return { server }
+    return undefined
+  }
+
+  // Auto-resolve: unambiguous if exactly one server
+  const size = ctx.registry.size()
+  if (size === 0) return undefined
+  if (size === 1) return { server: ctx.registry.getAll()[0] }
+
+  // Multiple projects — ambiguous without ?project=
+  return { ambiguous: true, projects: ctx.registry.directories() }
+}
+
 export function getLogPaths(ctx: McpContext): Record<string, string> {
-  if (ctx.registry) {
-    // If project-scoped, look up by directory; otherwise use latest
-    const server = ctx.projectDir
-      ? ctx.registry.getByDirectory(ctx.projectDir)
-      : ctx.registry.getLatest()
-    if (server?.logPaths) return server.logPaths
+  const resolved = resolveServer(ctx)
+  if (resolved && 'server' in resolved && resolved.server?.logPaths) {
+    return resolved.server.logPaths
   }
   return ctx.session.files
 }
 
-/** Get the serverId for the current MCP context (for scoping browser stubs) */
+/** Get the serverId (pid:port) for the current MCP context */
 export function getServerId(ctx: McpContext): string | undefined {
-  if (!ctx.registry) return undefined
-  const server = ctx.projectDir
-    ? ctx.registry.getByDirectory(ctx.projectDir)
-    : ctx.registry.getLatest()
-  return server?.id
+  const resolved = resolveServer(ctx)
+  if (resolved && 'server' in resolved) return resolved.server?.id
+  return undefined
+}
+
+/** Format a diagnostic error when server resolution fails */
+export function resolutionError(ctx: McpContext): string {
+  const resolved = resolveServer(ctx)
+  if (resolved && resolved.ambiguous) {
+    return `Multiple projects registered. Specify ?project=<directory> on MCP URL.\nRegistered projects:\n${resolved.projects.map(d => `  - ${d}`).join('\n')}`
+  }
+  if (ctx.projectDir) {
+    return `No server registered for project: ${ctx.projectDir}`
+  }
+  return 'No browser connected'
 }
 
 export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
@@ -90,11 +128,14 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
       code: z.string().describe('JavaScript code. Globals: `document`, `window` (capnweb proxies), `state` (persists across calls — store refs here), `browser` (helpers: .markdown(sel?), .screenshot(sel?), .navigate(url), .click(sel), .fill(sel, val), .waitFor(fnOrSel, interval?, timeout?), .eval(expr), .elementSource(sel) — returns {componentName, source: {filePath, lineNumber}}). Use `await` to read values.'),
     },
     async (args, extra) => {
-      const serverId = getServerId(ctx)
+      const resolved = resolveServer(ctx)
+      if (resolved?.ambiguous) {
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: resolutionError(ctx) }) }], isError: true }
+      }
+      const serverId = resolved?.server?.id
       const stub = getBrowserStub(serverId)
       if (!stub) {
-        const scopeMsg = serverId ? ` for server ${serverId}` : ''
-        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `No browser connected${scopeMsg}` }) }], isError: true }
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: resolutionError(ctx) }) }], isError: true }
       }
       try {
         const start = Date.now()

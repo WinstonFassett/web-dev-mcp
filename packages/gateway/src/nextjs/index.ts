@@ -14,35 +14,45 @@ export interface WebDevMcpOptions {
 // Guard: true while our own code is logging (prevents infinite recursion)
 let _internalLogging = false
 
-function registerAndPatchConsole(gatewayUrl: string) {
-  const body = JSON.stringify({
-    type: 'nextjs',
-    port: parseInt(process.env.PORT || '3000', 10),
-    pid: process.pid,
-    directory: process.cwd(),
-  })
+function registerAndPatchConsole(gatewayUrl: string, serverId: string) {
+  let registered = false
+  let retryTimer: ReturnType<typeof setInterval> | null = null
 
-  // Fire-and-forget — adapter works without gateway running
-  fetch(`${gatewayUrl}/__gateway/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body,
-  }).then((res) => res.json()).then((data) => {
-    if (data.success) {
-      _internalLogging = true
-      console.log(`  [web-dev-mcp] Registered with gateway (server: ${data.serverId}, logs: ${data.logDir})`)
-      _internalLogging = false
+  // Start console capture + build events immediately (don't wait for registration)
+  patchConsole(gatewayUrl, serverId)
+  connectDevEvents(gatewayUrl, serverId)
 
-      // Set server ID for browser client to pick up
-      process.env.__WEB_DEV_MCP_SERVER__ = data.serverId
+  function tryRegister() {
+    if (registered) return
 
-      // Start server-side console capture + build events
-      patchConsole(gatewayUrl, data.serverId)
-      connectDevEvents(gatewayUrl, data.serverId)
-    }
-  }).catch(() => {
-    // Gateway not running — that's fine
-  })
+    const body = JSON.stringify({
+      id: serverId,
+      type: 'nextjs',
+      port: parseInt(process.env.PORT || '3000', 10),
+      pid: process.pid,
+      directory: process.cwd(),
+    })
+
+    fetch(`${gatewayUrl}/__gateway/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    }).then((res) => res.json()).then((data) => {
+      if (data.success) {
+        registered = true
+        if (retryTimer) { clearInterval(retryTimer); retryTimer = null }
+
+        _internalLogging = true
+        console.log(`  [web-dev-mcp] Registered with gateway (server: ${data.serverId}, logs: ${data.logDir})`)
+        _internalLogging = false
+      }
+    }).catch(() => {
+      // Gateway not running — retry will handle it
+    })
+  }
+
+  tryRegister()
+  retryTimer = setInterval(tryRegister, 5000)
 }
 
 async function patchConsole(gatewayUrl: string, serverId: string) {
@@ -173,8 +183,12 @@ export function withWebDevMcp(
     return nextConfig
   }
 
-  // Register with gateway and patch console at config load time (dev server startup)
-  registerAndPatchConsole(gatewayUrl)
+  // Compute server ID locally and synchronously — available before webpack builds
+  const serverId = String(process.pid)
+  process.env.__WEB_DEV_MCP_SERVER__ = serverId
+
+  // Register with gateway (async, fire-and-forget with retry)
+  registerAndPatchConsole(gatewayUrl, serverId)
 
   return {
     ...nextConfig,
@@ -215,6 +229,7 @@ export function withWebDevMcp(
             new webpack.DefinePlugin({
               'process.env.__WEB_DEV_MCP_GATEWAY__': JSON.stringify(gatewayUrl),
               'process.env.__WEB_DEV_MCP_NETWORK__': JSON.stringify(network),
+              'process.env.__WEB_DEV_MCP_SERVER__': JSON.stringify(serverId),
             })
           )
         }

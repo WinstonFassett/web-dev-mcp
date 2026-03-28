@@ -196,7 +196,17 @@ export function setupRpcWebSocket(httpServer: { on(event: string, listener: (...
 
 function requireStub(serverId?: string): RpcStub<BrowserStub> {
   const stub = getBrowserStub(serverId)
-  if (!stub) throw new Error(serverId ? `No browser connected for server ${serverId}` : 'No browser connected')
+  if (!stub) {
+    const connected = getAllBrowsers()
+    const details = connected.length > 0
+      ? ` (${connected.length} browser(s) connected with servers: ${connected.map(b => b.serverId ?? 'untagged').join(', ')})`
+      : ' (no browsers connected)'
+    throw new Error(
+      serverId
+        ? `No browser connected for server ${serverId}${details}`
+        : `No browser connected${details}`
+    )
+  }
   return stub
 }
 

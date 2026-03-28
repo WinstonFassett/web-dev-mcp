@@ -4,19 +4,19 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { McpContext } from './mcp-server.js'
-import { getLogPaths, getServerId } from './mcp-tools-core.js'
+import { getLogPaths, resolveServer, resolutionError } from './mcp-tools-core.js'
 import { truncateChannelFiles } from './session.js'
 import { queryLogs } from './log-reader.js'
 import { getBrowserStub } from './rpc-server.js'
 
 function getStub(ctx: McpContext) {
-  return getBrowserStub(getServerId(ctx))
+  const resolved = resolveServer(ctx)
+  if (resolved?.ambiguous) return undefined
+  return getBrowserStub(resolved?.server?.id)
 }
 
 function noBrowser(ctx: McpContext) {
-  const sid = getServerId(ctx)
-  const msg = sid ? `No browser connected for server ${sid}` : 'No browser connected'
-  return { content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }], isError: true }
+  return { content: [{ type: 'text' as const, text: JSON.stringify({ error: resolutionError(ctx) }) }], isError: true }
 }
 
 function errResult(err: any) {
