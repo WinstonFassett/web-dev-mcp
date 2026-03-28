@@ -18,7 +18,7 @@ import { nodeHttpBatchRpcResponse } from 'capnweb'
 import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi, onBrowserEvent, emitLogEvent } from './rpc-server.js'
 import { handleAdmin } from './admin.js'
 import { autoRegister } from './auto-register.js'
-import { ServerRegistry, type RegisteredServer, makeServerId, initProjectLogDir } from './registry.js'
+import { ServerRegistry, type RegisteredServer, makeServerId, makeProjectId, initProjectLogDir } from './registry.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -200,6 +200,7 @@ export async function startGateway(options: GatewayOptions) {
 
           const server: RegisteredServer = {
             id: data.id || makeServerId(data.pid),
+            projectId: makeProjectId(data.directory),
             directory: data.directory,
             type: data.type as RegisteredServer['type'],
             port: data.port,
@@ -227,6 +228,7 @@ export async function startGateway(options: GatewayOptions) {
           res.end(JSON.stringify({
             success: true,
             serverId: server.id,
+            projectId: server.projectId,
             logDir,
             gatewayMcpUrl: `${serverUrl}${mcpPath}/sse`,
             gatewayRpcUrl: `${serverUrl.replace('http', 'ws')}/__rpc`,

@@ -11,8 +11,16 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join, basename } from 'node:path'
 
+/** Stable project short ID: basename-hash4 (e.g. "nextjs-turbopack-a3f7") */
+export function makeProjectId(directory: string): string {
+  const name = basename(directory)
+  const hash = createHash('sha256').update(directory).digest('hex').slice(0, 4)
+  return `${name}-${hash}`
+}
+
 export interface RegisteredServer {
   id: string              // PID string — ephemeral instance identity
+  projectId: string       // Stable short ID: basename-hash4
   directory: string       // Absolute project path (persistent scope)
   type: 'vite' | 'nextjs' | 'generic'
   port: number
@@ -52,6 +60,7 @@ export function initProjectLogDir(
 export class ServerRegistry {
   private servers = new Map<string, RegisteredServer>()       // server ID → server
   private directoryIndex = new Map<string, string>()          // directory → server ID
+  private projectIdIndex = new Map<string, string>()          // projectId → server ID
   private connectionOrder: string[] = []
 
   add(server: RegisteredServer): void {
@@ -63,6 +72,7 @@ export class ServerRegistry {
 
     this.servers.set(server.id, server)
     this.directoryIndex.set(server.directory, server.id)
+    this.projectIdIndex.set(server.projectId, server.id)
 
     // Track connection order
     const index = this.connectionOrder.indexOf(server.id)
@@ -82,6 +92,9 @@ export class ServerRegistry {
       if (this.directoryIndex.get(server.directory) === id) {
         this.directoryIndex.delete(server.directory)
       }
+      if (this.projectIdIndex.get(server.projectId) === id) {
+        this.projectIdIndex.delete(server.projectId)
+      }
       const index = this.connectionOrder.indexOf(id)
       if (index !== -1) {
         this.connectionOrder.splice(index, 1)
@@ -96,6 +109,12 @@ export class ServerRegistry {
 
   getByDirectory(directory: string): RegisteredServer | undefined {
     const id = this.directoryIndex.get(directory)
+    if (!id) return undefined
+    return this.servers.get(id)
+  }
+
+  getByProjectId(projectId: string): RegisteredServer | undefined {
+    const id = this.projectIdIndex.get(projectId)
     if (!id) return undefined
     return this.servers.get(id)
   }

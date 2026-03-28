@@ -7,7 +7,27 @@ description: Live browser observability and control for frontend development. Us
 
 Controls an already-open browser tab during development. MCP server at `/__mcp/sse`.
 
+## First call: set project context
+
+When multiple projects are registered, call `set_project` first with your working directory:
+
+```
+set_project({ project: "/path/to/your/project" })
+```
+
+Or use `list_projects` to discover available projects and their short IDs, then:
+
+```
+set_project({ project: "nextjs-turbopack-a3f7" })
+```
+
+If only one project is registered, tools auto-resolve — no `set_project` needed.
+
 ## Core tools
+
+### `list_projects` / `list_browsers` / `set_project`
+
+Gateway-scoped — work without a project context. Use to discover and select projects.
 
 ### `get_diagnostics`
 

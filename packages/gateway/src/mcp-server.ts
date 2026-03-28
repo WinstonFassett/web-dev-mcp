@@ -12,7 +12,8 @@ export interface McpContext {
   connectedClients: number
   devEventsWriter?: DevEventsWriter
   registry?: ServerRegistry
-  projectDir?: string  // Set from ?project= query param — scopes logs + browser to this project
+  /** Mutable — set by set_project tool, ?project= param, or roots/list auto-resolve */
+  currentProject?: string
 }
 
 type Toolset = 'core' | 'full'
@@ -50,8 +51,7 @@ export function sendNotificationToAll(channel: string, message: string, file: st
 
 /**
  * After MCP connect, ask the client for its workspace roots via roots/list.
- * Match against registered project directories to auto-resolve project scope.
- * Picks the most specific (deepest) matching directory.
+ * Only auto-sets currentProject if exactly one registered project matches.
  */
 async function resolveProjectFromRoots(mcp: McpServer, ctx: McpContext): Promise<void> {
   const registry = ctx.registry
@@ -61,10 +61,7 @@ async function resolveProjectFromRoots(mcp: McpServer, ctx: McpContext): Promise
   if (!result?.roots?.length) return
 
   const registeredDirs = registry.directories()
-
-  // Convert root URIs to paths and find the best match
-  let bestMatch: string | undefined
-  let bestDepth = -1
+  const matches = new Set<string>()
 
   for (const root of result.roots) {
     let rootPath: string
@@ -73,20 +70,19 @@ async function resolveProjectFromRoots(mcp: McpServer, ctx: McpContext): Promise
     } catch { continue }
 
     for (const dir of registeredDirs) {
-      // Project dir is inside or equal to root
       if (dir.startsWith(rootPath) || rootPath.startsWith(dir)) {
-        const depth = dir.split('/').length
-        if (depth > bestDepth) {
-          bestMatch = dir
-          bestDepth = depth
-        }
+        matches.add(dir)
       }
     }
   }
 
-  if (bestMatch) {
-    ctx.projectDir = bestMatch
-    console.log(`[web-dev-mcp] Auto-resolved project from roots: ${bestMatch}`)
+  // Only auto-set if exactly one match — multiple is ambiguous
+  if (matches.size === 1) {
+    const dir = matches.values().next().value!
+    ctx.currentProject = dir
+    console.log(`[web-dev-mcp] Auto-resolved project from roots: ${dir}`)
+  } else if (matches.size > 1) {
+    console.log(`[web-dev-mcp] Multiple projects match roots (${matches.size}), not auto-resolving`)
   }
 }
 
@@ -98,13 +94,12 @@ export function createMcpMiddleware(
     const url = req.url ?? ''
 
     if (url.startsWith(`${mcpPath}/sse`) && req.method === 'GET') {
-      // Parse toolset from query: /__mcp/sse?tools=full
       const urlObj = new URL(url, 'http://localhost')
       const toolset = (urlObj.searchParams.get('tools') as Toolset) || 'core'
-      const projectDir = urlObj.searchParams.get('project') || undefined
+      const projectParam = urlObj.searchParams.get('project') || undefined
 
-      // Create a per-session context with project scoping
-      const sessionCtx: McpContext = { ...ctx, projectDir }
+      // Create a per-session context
+      const sessionCtx: McpContext = { ...ctx, currentProject: projectParam }
 
       const transport = new SSEServerTransport(`${mcpPath}/message`, res)
       const server = createMcpServerInstance(sessionCtx, toolset)
@@ -120,7 +115,7 @@ export function createMcpMiddleware(
 
       server.connect(transport).then(() => {
         // After connection, try to auto-resolve project from client roots
-        if (!sessionCtx.projectDir && sessionCtx.registry) {
+        if (!sessionCtx.currentProject && sessionCtx.registry) {
           resolveProjectFromRoots(server, sessionCtx).catch(() => {
             // Client may not support roots/list — that's fine
           })

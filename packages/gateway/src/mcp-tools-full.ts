@@ -4,19 +4,28 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { McpContext } from './mcp-server.js'
-import { getLogPaths, resolveServer, resolutionError } from './mcp-tools-core.js'
+import { getLogPaths, resolveProject } from './mcp-tools-core.js'
 import { truncateChannelFiles } from './session.js'
 import { queryLogs } from './log-reader.js'
 import { getBrowserStub } from './rpc-server.js'
 
 function getStub(ctx: McpContext) {
-  const resolved = resolveServer(ctx)
-  if (resolved?.ambiguous) return undefined
-  return getBrowserStub(resolved?.server?.id)
+  try {
+    const resolved = resolveProject(ctx)
+    if (resolved.type === 'gateway') return undefined
+    return getBrowserStub(resolved.serverId)
+  } catch {
+    return undefined
+  }
 }
 
 function noBrowser(ctx: McpContext) {
-  return { content: [{ type: 'text' as const, text: JSON.stringify({ error: resolutionError(ctx) }) }], isError: true }
+  try {
+    resolveProject(ctx)
+    return { content: [{ type: 'text' as const, text: JSON.stringify({ error: 'No browser connected' }) }], isError: true }
+  } catch (err: any) {
+    return { content: [{ type: 'text' as const, text: JSON.stringify({ error: err.message }) }], isError: true }
+  }
 }
 
 function errResult(err: any) {
