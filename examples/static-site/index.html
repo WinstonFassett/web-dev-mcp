@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Static Site MCP Test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+    button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+    #count { font-size: 2rem; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Static Site MCP Test</h1>
+  <p>Plain HTML — no framework, no bundler.</p>
+
+  <p>Count: <span id="count">0</span></p>
+  <button onclick="increment()">Increment</button>
+  <button onclick="console.error('test error')">Throw Error</button>
+  <button onclick="fetch('/api/test').catch(() => {})">Fetch</button>
+
+  <script>
+    let count = 0
+    function increment() {
+      count++
+      document.getElementById('count').textContent = count
+      console.log('count:', count)
+    }
+  </script>
+</body>
+</html>

@@ -23,15 +23,14 @@ graph LR
 npx web-dev-mcp-gateway
 ```
 
-### 2. Open any site through it
+### 2. Connect your dev app
 
-Browse any URL through the gateway proxy:
-```
-http://localhost:3333/http://localhost:5173/
-http://localhost:3333/https://example.com/
-```
+Use a framework adapter (see Install section) or the optional proxy plugin:
 
-Or use a framework adapter for tighter integration (see Install section).
+```bash
+npm install web-dev-mcp-proxy  # optional — enables browsing any URL through gateway
+# Then: http://localhost:3333/http://localhost:5173/
+```
 
 ### 3. Connect your agent
 
@@ -165,11 +164,13 @@ npx web-dev-mcp-gateway
 
 Both frameworks need the gateway running. It's a lightweight daemon on `:3333`.
 
-## Gateway modes
+## How to connect
 
-**Dynamic proxy**: browse `http://localhost:3333/http://your-dev-server/` to proxy any URL with client.js injection. Works with any dev server, no config needed.
+**Framework adapters** (recommended): Vite and Next.js adapters inject client.js natively and forward HMR/build events to the gateway.
 
-**Framework adapters**: Vite and Next.js adapters inject client.js natively and forward HMR/build events to the gateway. Tighter integration, no proxy needed.
+**Proxy plugin** (`npm install web-dev-mcp-proxy`): browse `http://localhost:3333/http://any-url/` to proxy and instrument any page. Works with any dev server or website.
+
+**Manual**: add `<script src="http://localhost:3333/__client.js"></script>` to your HTML.
 
 ## How it works
 

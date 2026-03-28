@@ -74,9 +74,9 @@ wait_for_condition({ check: "document.querySelector('.success-toast')", timeout:
 screenshot()
 ```
 
-## Browsing & Scraping (via gateway proxy)
+## Browsing & Scraping (requires web-dev-mcp-proxy)
 
-Browse any site through the gateway: `http://localhost:3333/https://example.com/`
+Install the proxy plugin: `npm install web-dev-mcp-proxy`. Then browse any site through the gateway: `http://localhost:3333/https://example.com/`
 
 ### Read a page and follow links
 
