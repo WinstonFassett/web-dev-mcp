@@ -34,6 +34,10 @@ function createMcpServerInstance(ctx: McpContext, toolset: Toolset = 'core'): Mc
 // Map of sessionId → { transport, server } for routing POST messages
 const connections = new Map<string, { transport: SSEServerTransport; server: McpServer }>()
 
+export function getMcpSessionCount(): number {
+  return connections.size
+}
+
 export function sendNotificationToAll(channel: string, message: string, file: string, hint: string): void {
   for (const { server } of connections.values()) {
     server.server.sendLoggingMessage({

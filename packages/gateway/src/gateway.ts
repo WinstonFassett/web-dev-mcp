@@ -15,6 +15,7 @@ import { DevEventsWriter, type BuildEventPayload } from './writers/dev-events.js
 import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './mcp-server.js'
 import { nodeHttpBatchRpcResponse } from 'capnweb'
 import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi } from './rpc-server.js'
+import { handleAdmin } from './admin.js'
 import { autoRegister } from './auto-register.js'
 import { ServerRegistry, type RegisteredServer } from './registry.js'
 
@@ -245,6 +246,9 @@ export async function startGateway(options: GatewayOptions) {
       })
       return
     }
+
+    // Admin UI
+    if (handleAdmin(req, res, url, { startedAt: session.startedAt, registry, port })) return
 
     // Try optional proxy plugin (npm install web-dev-mcp-proxy)
     if (proxyMiddleware) {

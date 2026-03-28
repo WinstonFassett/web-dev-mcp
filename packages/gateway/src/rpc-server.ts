@@ -95,7 +95,7 @@ export function getBrowserStub(): RpcStub<BrowserStub> | undefined {
   return browsers.get(connId)?.stub
 }
 
-function getAllBrowsers(): Array<{ connId: string; browserId: string | null; serverId: string | null; connectedAt: number }> {
+export function getAllBrowsers(): Array<{ connId: string; browserId: string | null; serverId: string | null; connectedAt: number }> {
   return Array.from(browsers.entries()).map(([connId, conn]) => ({
     connId,
     browserId: conn.browserId,
