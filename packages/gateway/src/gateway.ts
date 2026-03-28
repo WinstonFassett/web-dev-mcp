@@ -14,7 +14,7 @@ import { NetworkWriter } from './writers/network.js'
 import { DevEventsWriter, type BuildEventPayload } from './writers/dev-events.js'
 import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './mcp-server.js'
 import { nodeHttpBatchRpcResponse } from 'capnweb'
-import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi } from './rpc-server.js'
+import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi, onBrowserEvent } from './rpc-server.js'
 import { handleAdmin } from './admin.js'
 import { autoRegister } from './auto-register.js'
 import { ServerRegistry, type RegisteredServer } from './registry.js'
@@ -81,6 +81,17 @@ export async function startGateway(options: GatewayOptions) {
     console.log('  [web-dev-mcp] Proxy plugin loaded')
   } catch {
     // Not installed — no proxy, that's fine
+  }
+
+  // Admin SSE clients for real-time event streaming
+  const adminClients = new Set<{ res: http.ServerResponse; browserId?: string }>()
+
+  function broadcastToAdmin(event: string, data: any) {
+    const json = JSON.stringify(data)
+    for (const client of adminClients) {
+      if (client.browserId && data.browserId && client.browserId !== data.browserId) continue
+      client.res.write(`event: ${event}\ndata: ${json}\n\n`)
+    }
   }
 
   // Create server registry for hybrid architecture
@@ -250,6 +261,24 @@ export async function startGateway(options: GatewayOptions) {
     // Admin UI
     if (handleAdmin(req, res, url, { startedAt: session.startedAt, registry, port })) return
 
+    // Admin SSE event stream
+    if (url.startsWith('/__admin/events')) {
+      const params = new URL(url, 'http://localhost').searchParams
+      const browserId = params.get('browser_id') || undefined
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      })
+      res.write('event: connected\ndata: {}\n\n')
+      const client = { res, browserId }
+      adminClients.add(client)
+      const keepalive = setInterval(() => res.write(':keepalive\n\n'), 30000)
+      req.on('close', () => { adminClients.delete(client); clearInterval(keepalive) })
+      return
+    }
+
     // Try optional proxy plugin (npm install web-dev-mcp-proxy)
     if (proxyMiddleware) {
       proxyMiddleware(req, res, () => {
@@ -290,6 +319,11 @@ export async function startGateway(options: GatewayOptions) {
   setupRpcWebSocket(server, '/__rpc')
   setupAgentRpcWebSocket(server, '/__rpc/agent')
 
+  // Broadcast browser connect/disconnect to admin SSE
+  onBrowserEvent((event, data) => {
+    broadcastToAdmin(event === 'connect' ? 'browser_connect' : 'browser_disconnect', data)
+  })
+
   // Upgrade handler for events + dev-events + proxy WS
   server.on('upgrade', (request: http.IncomingMessage, socket: any, head: Buffer) => {
     const url = request.url ?? ''
@@ -325,6 +359,9 @@ export async function startGateway(options: GatewayOptions) {
         } else if (channel === 'network' && writers.network) {
           writers.network.write(payload)
         }
+
+        // Push to admin SSE clients
+        broadcastToAdmin('log', { channel, payload, browserId })
       } catch {
         // Ignore malformed messages
       }

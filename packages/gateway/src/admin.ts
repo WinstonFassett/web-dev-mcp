@@ -126,30 +126,30 @@ async function refresh() {
   } catch {}
 }
 
-async function showLogs(browserId) {
+let logStream = null
+
+function showLogs(browserId) {
   selectedBrowser = browserId
   document.getElementById('logs').style.display = ''
   document.getElementById('logs-browser').textContent = browserId.slice(0,12)
-  await refreshLogs()
-}
+  document.getElementById('logs-content').innerHTML = '<span class="empty">Listening...</span>'
 
-async function refreshLogs() {
-  if (!selectedBrowser || !mcpUrl) return
-  try {
-    const r = await mcpCall('tools/call', { name: 'get_diagnostics', arguments: { browser_id: selectedBrowser, limit: 50 } })
-    const d = JSON.parse(r?.result?.content?.[0]?.text || '{}')
-    const events = [...(d.logs?.console || []), ...(d.logs?.errors || [])].sort((a,b) => a.ts - b.ts)
+  // Close previous stream
+  if (logStream) logStream.close()
+
+  // Connect SSE filtered by browser
+  logStream = new EventSource('/__admin/events?browser_id=' + encodeURIComponent(browserId))
+  logStream.addEventListener('log', e => {
+    const d = JSON.parse(e.data)
     const el = document.getElementById('logs-content')
-    el.innerHTML = events.length === 0 ? '<span class="empty">No events</span>' :
-      events.map(e => {
-        const p = e.payload
-        const cls = p.level === 'error' ? 'log-error' : p.level === 'warn' ? 'log-warn' : ''
-        const time = new Date(e.ts).toLocaleTimeString()
-        const text = p.args ? p.args.join(' ') : (p.message || JSON.stringify(p))
-        return '<div class="' + cls + '">[' + time + '] ' + escHtml(text) + '</div>'
-      }).join('')
+    if (el.querySelector('.empty')) el.innerHTML = ''
+    const p = d.payload
+    const cls = p.level === 'error' ? 'log-error' : p.level === 'warn' ? 'log-warn' : ''
+    const time = new Date().toLocaleTimeString()
+    const text = p.args ? p.args.join(' ') : (p.message || JSON.stringify(p))
+    el.innerHTML += '<div class="' + cls + '">[' + time + '] <b>' + d.channel + '</b> ' + escHtml(text) + '</div>'
     el.scrollTop = el.scrollHeight
-  } catch {}
+  })
 }
 
 function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
@@ -196,7 +196,7 @@ async function runEval() {
 
 connectMcp()
 refresh()
-setInterval(() => { refresh(); if (selectedBrowser) refreshLogs() }, 5000)
+setInterval(refresh, 5000)  // Stats only — logs stream via SSE
 </script>
 </body></html>`
 }

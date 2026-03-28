@@ -89,6 +89,14 @@ interface BrowserConnection {
 const browsers = new Map<string, BrowserConnection>()
 const connectionOrder: string[] = []
 
+// Hooks for external listeners (admin UI, etc)
+type BrowserEventCallback = (event: 'connect' | 'disconnect', data: { connId: string; browserId: string | null; serverId: string | null }) => void
+const browserEventListeners: Set<BrowserEventCallback> = new Set()
+export function onBrowserEvent(cb: BrowserEventCallback) {
+  browserEventListeners.add(cb)
+  return () => browserEventListeners.delete(cb)
+}
+
 export function getBrowserStub(): RpcStub<BrowserStub> | undefined {
   if (connectionOrder.length === 0) return undefined
   const connId = connectionOrder[connectionOrder.length - 1]
@@ -149,12 +157,15 @@ export function setupRpcWebSocket(httpServer: { on(event: string, listener: (...
 
     const serverInfo = serverId ? ` for server ${serverId}` : ''
     console.log(`[web-dev-mcp] Browser connected (${connId})${serverInfo}`)
+    for (const cb of browserEventListeners) cb('connect', { connId, browserId: conn.browserId, serverId })
 
     ws.on('close', () => {
+      const bid = conn.browserId
       browsers.delete(connId)
       const idx = connectionOrder.indexOf(connId)
       if (idx >= 0) connectionOrder.splice(idx, 1)
       console.log(`[web-dev-mcp] Browser disconnected (${connId})`)
+      for (const cb of browserEventListeners) cb('disconnect', { connId, browserId: bid, serverId })
     })
   })
 
