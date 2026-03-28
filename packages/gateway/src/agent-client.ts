@@ -37,6 +37,8 @@ export interface BrowserHandle {
   click(selector: string): Promise<{ clicked: string; tag: string } | { error: string }>
   /** Fill an input by CSS selector */
   fill(selector: string, value: string): Promise<{ filled: string; value: string } | { error: string }>
+  /** Run JS in the browser via eval */
+  eval(expression: string): Promise<string>
 }
 
 export interface GatewayConnection {
@@ -102,6 +104,7 @@ function makeBrowserHandle(getStub: () => any, whenReady: <T>(fn: () => T) => Pr
     screenshot: (selectorOrOpts?: string | Record<string, any>) => whenReady(() => getStub().screenshot(selectorOrOpts)),
     click: (s: string) => whenReady(() => getStub().click(s)),
     fill: (s: string, v: string) => whenReady(() => getStub().fill(s, v)),
+    eval: (expression: string) => whenReady(() => getStub().eval(expression)),
   }
 }
 

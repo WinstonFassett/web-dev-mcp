@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { connectGateway, type GatewayConnection } from './gateway'
+  import { getGateway, type GatewayConnection } from './gateway'
   import { fetchAdminData, type AdminData, type BrowserInfo, type ServerInfo } from './api'
   import StatCard from './StatCard.svelte'
   import LogStream from './LogStream.svelte'
@@ -63,7 +63,7 @@
   async function init() {
     // Try capnweb connection
     try {
-      gw = await connectGateway()
+      gw = await getGateway()
       console.log('[admin] capnweb connected')
       await refreshViaCapnweb(gw)
       interval = setInterval(() => {
@@ -83,7 +83,6 @@
   $effect(() => {
     return () => {
       if (interval) clearInterval(interval)
-      gw?.close()
     }
   })
 </script>

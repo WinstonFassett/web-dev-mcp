@@ -1,6 +1,6 @@
 /**
  * capnweb connection to gateway's /__rpc/agent endpoint.
- * Same path agent scripts use — one WebSocket for everything.
+ * Singleton — shared across all components.
  */
 
 import { RpcSession } from 'capnweb'
@@ -71,8 +71,12 @@ function createTransport(ws: WebSocket) {
 
 const GATEWAY_WS = 'ws://localhost:3333/__rpc/agent'
 
-export function connectGateway(): Promise<GatewayConnection> {
-  return new Promise((resolve, reject) => {
+// Singleton connection — shared across all components
+let _instance: Promise<GatewayConnection> | null = null
+
+export function getGateway(): Promise<GatewayConnection> {
+  if (_instance) return _instance
+  _instance = new Promise((resolve, reject) => {
     const ws = new WebSocket(GATEWAY_WS)
     let connected = true
 
@@ -83,18 +87,21 @@ export function connectGateway(): Promise<GatewayConnection> {
 
       resolve({
         stub,
-        close() { connected = false; ws.close() },
+        close() { connected = false; ws.close(); _instance = null },
         get connected() { return connected && ws.readyState === WebSocket.OPEN },
       })
     })
 
     ws.addEventListener('error', () => {
       if (!connected) return
+      _instance = null
       reject(new Error('Could not connect to gateway'))
     })
 
     ws.addEventListener('close', () => {
       connected = false
+      _instance = null
     })
   })
+  return _instance
 }

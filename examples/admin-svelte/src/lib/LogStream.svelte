@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { getGateway } from './gateway'
+
   interface LogEvent {
     type: string
     channel?: string
@@ -14,7 +16,6 @@
   let logContainer: HTMLElement | undefined = $state()
   let autoScroll = $state(true)
   const MAX_LOGS = 500
-  const GATEWAY = 'http://localhost:3333'
 
   function levelClass(level?: string): string {
     switch (level) {
@@ -37,8 +38,8 @@
   }
 
   function formatPayload(event: LogEvent): string {
-    if (event.type === 'connect' || event.type === 'browser_connect') return `Browser connected: ${event.browserId || event.connId}`
-    if (event.type === 'disconnect' || event.type === 'browser_disconnect') return `Browser disconnected: ${event.browserId || event.connId}`
+    if (event.type === 'connect') return `Browser connected: ${event.browserId || event.connId}`
+    if (event.type === 'disconnect') return `Browser disconnected: ${event.browserId || event.connId}`
     const p = event.payload
     if (!p) return JSON.stringify(event)
     if (p.args) return p.args.join(' ')
@@ -46,61 +47,39 @@
     return JSON.stringify(p)
   }
 
-  function connectSSE() {
-    streaming = true
-    error = null
-
-    const es = new EventSource(`${GATEWAY}/__admin/events`)
-
-    es.addEventListener('log', (e) => {
-      try {
-        const data = JSON.parse(e.data) as LogEvent
-        data.type = 'log'
-        logs = [...logs.slice(-MAX_LOGS + 1), data]
-        if (autoScroll && logContainer) {
-          requestAnimationFrame(() => {
-            logContainer!.scrollTop = logContainer!.scrollHeight
-          })
-        }
-      } catch {}
-    })
-
-    es.addEventListener('browser_connect', (e) => {
-      try {
-        const data = JSON.parse(e.data)
-        logs = [...logs.slice(-MAX_LOGS + 1), { type: 'browser_connect', ...data }]
-      } catch {}
-    })
-
-    es.addEventListener('browser_disconnect', (e) => {
-      try {
-        const data = JSON.parse(e.data)
-        logs = [...logs.slice(-MAX_LOGS + 1), { type: 'browser_disconnect', ...data }]
-      } catch {}
-    })
-
-    es.addEventListener('connected', () => {
-      console.log('[admin] SSE log stream connected')
-    })
-
-    es.onerror = () => {
-      if (es.readyState === EventSource.CLOSED) {
-        streaming = false
-        error = 'SSE stream closed'
-      }
+  function addLog(event: LogEvent) {
+    logs = [...logs.slice(-MAX_LOGS + 1), event]
+    if (autoScroll && logContainer) {
+      requestAnimationFrame(() => {
+        logContainer!.scrollTop = logContainer!.scrollHeight
+      })
     }
-
-    return es
   }
 
-  let eventSource: EventSource | null = null
-
-  $effect(() => {
-    eventSource = connectSSE()
-    return () => {
-      eventSource?.close()
+  async function startStream() {
+    streaming = true
+    error = null
+    try {
+      const gw = await getGateway()
+      const stream: ReadableStream = await gw.stub.subscribeEvents()
+      console.log('[admin] capnweb log stream connected')
+      const reader = stream.getReader()
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        addLog(value as LogEvent)
+      }
+    } catch (e: any) {
+      if (e.message !== 'WebSocket closed') {
+        error = e.message
+        console.error('[admin] log stream error:', e.message)
+      }
+    } finally {
+      streaming = false
     }
-  })
+  }
+
+  startStream()
 </script>
 
 <section>

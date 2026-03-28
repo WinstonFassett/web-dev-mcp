@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { connectGateway, type GatewayConnection } from './gateway'
+  import { getGateway, type GatewayConnection } from './gateway'
   import { EditorView, basicSetup } from 'codemirror'
   import { javascript } from '@codemirror/lang-javascript'
   import { oneDark } from '@codemirror/theme-one-dark'
@@ -25,7 +25,7 @@
   // Connect capnweb
   async function initGw() {
     try {
-      gw = await connectGateway()
+      gw = await getGateway()
       gwError = null
     } catch (e: any) {
       gwError = e.message
@@ -34,7 +34,7 @@
   initGw()
 
   $effect(() => {
-    return () => gw?.close()
+    return () => {}
   })
 
   async function runCode() {
