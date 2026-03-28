@@ -7,6 +7,10 @@
  * or manually: import 'web-dev-mcp-gateway/nextjs/instrument'
  */
 if (typeof window !== 'undefined' && !(window as any).__WEB_DEV_MCP_LOADED__) {
+  // Pass server ID to browser client if available (set by withWebDevMcp registration)
+  if ((globalThis as any).process?.env?.__WEB_DEV_MCP_SERVER__) {
+    (window as any).__WEB_DEV_MCP_SERVER__ = (globalThis as any).process.env.__WEB_DEV_MCP_SERVER__
+  }
   const script = document.createElement('script')
   script.src = '/__client.js'
   script.async = true

@@ -11,6 +11,30 @@ export interface WebDevMcpOptions {
   network?: boolean
 }
 
+function registerWithGateway(gatewayUrl: string, network: boolean) {
+  const body = JSON.stringify({
+    type: 'nextjs',
+    port: parseInt(process.env.PORT || '3000', 10),
+    pid: process.pid,
+    directory: process.cwd(),
+  })
+
+  // Fire-and-forget — adapter works without gateway running
+  fetch(`${gatewayUrl}/__gateway/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  }).then((res) => res.json()).then((data) => {
+    if (data.success) {
+      console.log(`  [web-dev-mcp] Registered with gateway (server: ${data.serverId}, logs: ${data.logDir})`)
+      // Set server ID for browser client to pick up
+      process.env.__WEB_DEV_MCP_SERVER__ = data.serverId
+    }
+  }).catch(() => {
+    // Gateway not running — that's fine
+  })
+}
+
 export function withWebDevMcp(
   nextConfig: NextConfig = {},
   options: WebDevMcpOptions = {}
@@ -24,6 +48,9 @@ export function withWebDevMcp(
   if (!enabled) {
     return nextConfig
   }
+
+  // Register with gateway at config load time (dev server startup)
+  registerWithGateway(gatewayUrl, network)
 
   return {
     ...nextConfig,
