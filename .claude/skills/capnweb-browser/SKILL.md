@@ -16,7 +16,10 @@ Persistent session. References (import IDs) survive across messages.
 ```js
 import { connect } from 'web-dev-mcp-gateway/agent'
 
-const browser = await connect('ws://localhost:3333/__rpc/agent')
+const gw = await connect('ws://localhost:3333/__rpc/agent')
+const browser = gw.getProject()           // latest project
+// or: gw.getProject('a1b2c3d4')          // specific project by server ID
+
 const { document } = browser
 
 // Get a reference — this is a capnweb import ID under the hood
@@ -34,7 +37,7 @@ await heading.click()  // works
 const href = document.querySelector('a').closest('tr').nextElementSibling.querySelector('a:last-child').href
 console.log(await href)  // one network round trip for the whole chain
 
-browser.close()  // all refs die
+gw.close()  // all refs die
 ```
 
 **Refs die when:** WebSocket closes, browser page reloads, gateway restarts.
@@ -47,8 +50,9 @@ Stateless per request. All calls in one HTTP round-trip. Refs exist within the b
 import { newHttpBatchRpcSession } from 'capnweb'
 
 const gw = newHttpBatchRpcSession('http://localhost:3333/__rpc/batch')
-const title = await gw.document.title          // one HTTP POST, done
-const md = await gw.getPageMarkdown()           // another POST, independent
+const browser = gw.getProject()                   // get project-scoped handle
+const title = await browser.document.title         // one HTTP POST, done
+const md = await browser.getPageMarkdown()         // another POST, independent
 ```
 
 Each call to `newHttpBatchRpcSession` creates a fresh session. No WebSocket. No persistent state. Good for one-shot operations, CI bots, scripts.
@@ -56,19 +60,44 @@ Each call to `newHttpBatchRpcSession` creates a fresh session. No WebSocket. No 
 Raw protocol via curl (newline-separated messages):
 
 ```bash
-# One-shot: read document.title
+# One-shot: read document.title via getProject
 curl -X POST http://localhost:3333/__rpc/batch \
-  -d '["stream",["import",0,["document","title"]]]'
-# → ["resolve",1,"My Page Title"]
-
-# Pipelined: querySelector then read tagName (one round-trip)
-curl -X POST http://localhost:3333/__rpc/batch \
-  -d '["push",["import",0,["document","querySelector"],["body"]]]
-["stream",["import",1,["tagName"]]]'
-# → ["resolve",2,"BODY"]
+  -d '["push",["import",0,["getProject"]]]
+["stream",["import",1,["document","title"]]]'
+# → ["resolve",2,"My Page Title"]
 ```
 
 **Refs die when:** HTTP response completes.
+
+## API shape
+
+### GatewayConnection (from `connect()`)
+
+Gateway-level operations:
+
+```js
+gw.getBrowserCount()     // number of connected browsers
+gw.getBrowserList()      // [{ connId, browserId, serverId }]
+gw.listProjects()        // registered server IDs
+gw.getProject(serverId?) // → BrowserHandle (no arg = latest)
+gw.subscribeEvents(browserId?)  // → ReadableStream
+gw.close()
+```
+
+### BrowserHandle (from `getProject()`)
+
+Project-scoped browser interaction:
+
+```js
+browser.document         // capnweb proxy to browser's document
+browser.window           // capnweb proxy to browser's window
+browser.navigate(url)
+browser.getPageMarkdown(selector?)
+browser.getVisibleText(selector?)
+browser.screenshot(selector?)
+browser.click(selector)
+browser.fill(selector, value)
+```
 
 ## What a ref actually is
 
@@ -121,44 +150,22 @@ Messages are JSON arrays. Key message types:
 
 Expressions reference remote objects:
 - `["import", 0]` — the main API object (import ID 0)
-- `["import", 0, ["document", "querySelector"], ["h1"]]` — call `api.document.querySelector("h1")`
+- `["import", 0, ["getProject"]]` — get project-scoped browser handle
+- `["import", 1, ["document", "querySelector"], ["h1"]]` — call `browser.document.querySelector("h1")`
 - `["import", 3, ["textContent"]]` — read property on import ID 3
 
 Promise pipelining: you can reference an import ID before it resolves. The server queues the call. Multiple `push` messages in one batch execute sequentially server-side — one network round-trip for the whole chain.
 
 Values are JSON with type wrappers: `["date", ms]`, `["error", type, msg, stack?]`, `["bytes", base64]`, `["undefined"]`. `RpcTarget` instances are passed by reference (as export/import IDs), not by value.
 
-## Agent client helper
-
-```js
-import { connect } from 'web-dev-mcp-gateway/agent'
-
-const browser = await connect('ws://localhost:3333/__rpc/agent')
-
-// Remote DOM
-browser.document    // capnweb proxy to browser's document
-browser.window      // capnweb proxy to browser's window
-
-// Convenience methods
-browser.navigate(url)
-browser.getPageMarkdown(selector?)
-browser.getVisibleText(selector?)
-browser.screenshot(selector?)
-browser.click(selector)
-browser.fill(selector, value)
-browser.getBrowserCount()
-browser.getBrowserList()
-browser.subscribeEvents(browserId?)  // → ReadableStream
-browser.close()
-```
-
 ## Real-time event streaming
 
 `subscribeEvents()` returns a native `ReadableStream` over capnweb. Events are pushed as they happen — console logs, errors, browser connect/disconnect.
 
 ```js
-const stream = await browser.subscribeEvents()  // all events
-// or: await browser.subscribeEvents('abc123')  // filter by browser ID
+const gw = await connect('ws://localhost:3333/__rpc/agent')
+const stream = await gw.subscribeEvents()  // all events
+// or: await gw.subscribeEvents('abc123')  // filter by browser ID
 
 const reader = stream.getReader()
 while (true) {
@@ -172,6 +179,7 @@ while (true) {
 
 // Clean up
 reader.cancel()
+gw.close()
 ```
 
 Uses capnweb's native stream support — backpressure, multiplexing, clean disposal. Stream lives as long as the WebSocket connection.
