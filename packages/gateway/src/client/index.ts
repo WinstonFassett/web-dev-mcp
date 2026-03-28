@@ -616,13 +616,29 @@
       }
 
       const browserApi = new BrowserApi()
+      let rpcReconnectTimer: ReturnType<typeof setTimeout> | null = null
 
-      try {
-        newWebSocketRpcSession(rpcUrl, browserApi)
-        originalConsole.log('[web-dev-mcp] RPC connected:', rpcUrl)
-      } catch (err) {
-        originalConsole.warn('[web-dev-mcp] RPC connection failed:', err)
+      function connectRpc() {
+        const ws = new WebSocket(rpcUrl)
+
+        ws.onopen = () => {
+          newWebSocketRpcSession(ws as any, browserApi)
+          originalConsole.log('[web-dev-mcp] RPC connected:', rpcUrl)
+        }
+
+        ws.onclose = () => {
+          if (!rpcReconnectTimer) {
+            rpcReconnectTimer = setTimeout(() => {
+              rpcReconnectTimer = null
+              connectRpc()
+            }, 2000)
+          }
+        }
+
+        ws.onerror = () => {}
       }
+
+      connectRpc()
     }
   }).catch((err: any) => {
     originalConsole.warn('[web-dev-mcp] Could not load RPC modules:', err)
