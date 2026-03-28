@@ -36,7 +36,7 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
 
   mcp.tool(
     'get_diagnostics',
-    'Consolidated diagnostic snapshot: logs + build status + summary. Single call replaces multiple get_logs calls.',
+    'Consolidated diagnostic snapshot: browser logs + server logs + build status + summary. Includes console, errors, network, and server-side console (SSR/API route output).',
     {
       since_checkpoint: z.boolean().optional().describe('Use checkpoint from last clear'),
       since_ts: z.number().optional().describe('Unix ms timestamp'),

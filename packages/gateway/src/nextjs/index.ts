@@ -11,7 +11,10 @@ export interface WebDevMcpOptions {
   network?: boolean
 }
 
-function registerWithGateway(gatewayUrl: string, network: boolean) {
+// Guard: true while our own code is logging (prevents infinite recursion)
+let _internalLogging = false
+
+function registerAndPatchConsole(gatewayUrl: string) {
   const body = JSON.stringify({
     type: 'nextjs',
     port: parseInt(process.env.PORT || '3000', 10),
@@ -26,13 +29,87 @@ function registerWithGateway(gatewayUrl: string, network: boolean) {
     body,
   }).then((res) => res.json()).then((data) => {
     if (data.success) {
+      _internalLogging = true
       console.log(`  [web-dev-mcp] Registered with gateway (server: ${data.serverId}, logs: ${data.logDir})`)
+      _internalLogging = false
+
       // Set server ID for browser client to pick up
       process.env.__WEB_DEV_MCP_SERVER__ = data.serverId
+
+      // Start server-side console capture
+      patchConsole(gatewayUrl, data.serverId)
     }
   }).catch(() => {
     // Gateway not running — that's fine
   })
+}
+
+function patchConsole(gatewayUrl: string, serverId: string) {
+  // Dynamic import ws — it's a dependency of web-dev-mcp-gateway
+  let WebSocket: any
+  try {
+    WebSocket = require('ws')
+  } catch {
+    // ws not available — skip server console capture
+    return
+  }
+
+  const wsUrl = gatewayUrl.replace(/^http/, 'ws') + '/__events?server=' + encodeURIComponent(serverId)
+  let ws: any = null
+  let queue: string[] = []
+  let closed = false
+
+  function connect() {
+    if (closed) return
+    ws = new WebSocket(wsUrl)
+
+    ws.on('open', () => {
+      for (const msg of queue) ws.send(msg)
+      queue = []
+    })
+    ws.on('close', () => {
+      ws = null
+      if (!closed) setTimeout(connect, 2000)
+    })
+    ws.on('error', () => {
+      // Swallow — close handler does reconnect
+    })
+  }
+  connect()
+
+  function send(level: string, args: any[]) {
+    const serialized = args.map(a => {
+      if (typeof a === 'string') return a.slice(0, 2000)
+      try { return JSON.stringify(a).slice(0, 2000) } catch { return String(a).slice(0, 2000) }
+    })
+    const msg = JSON.stringify({
+      channel: 'server-console',
+      payload: { level, args: serialized, source: 'server' },
+    })
+    if (ws?.readyState === 1) {
+      ws.send(msg)
+    } else if (queue.length < 1000) {
+      queue.push(msg)
+    }
+  }
+
+  for (const level of ['log', 'warn', 'error', 'info', 'debug'] as const) {
+    const orig = console[level]
+    console[level] = (...args: any[]) => {
+      // Always call original first
+      orig.apply(console, args)
+
+      // Guard: skip our own internal logs + skip if first arg starts with known prefixes
+      if (_internalLogging) return
+      const first = args[0]
+      if (typeof first === 'string' && (first.startsWith('[web-dev-mcp]') || first.startsWith('  [web-dev-mcp]') || first.startsWith('[registry]'))) return
+
+      send(level, args)
+    }
+  }
+
+  // Cleanup on process exit
+  process.on('exit', () => { closed = true; ws?.close() })
 }
 
 export function withWebDevMcp(
@@ -49,8 +126,8 @@ export function withWebDevMcp(
     return nextConfig
   }
 
-  // Register with gateway at config load time (dev server startup)
-  registerWithGateway(gatewayUrl, network)
+  // Register with gateway and patch console at config load time (dev server startup)
+  registerAndPatchConsole(gatewayUrl)
 
   return {
     ...nextConfig,

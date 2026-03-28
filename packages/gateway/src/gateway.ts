@@ -12,6 +12,7 @@ import { ConsoleWriter } from './writers/console.js'
 import { ErrorsWriter } from './writers/errors.js'
 import { NetworkWriter } from './writers/network.js'
 import { DevEventsWriter, type BuildEventPayload } from './writers/dev-events.js'
+import { ServerConsoleWriter } from './writers/server-console.js'
 import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './mcp-server.js'
 import { nodeHttpBatchRpcResponse } from 'capnweb'
 import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi, onBrowserEvent, emitLogEvent } from './rpc-server.js'
@@ -26,6 +27,7 @@ interface Writers {
   errors: ErrorsWriter
   network?: NetworkWriter
   devEvents: DevEventsWriter
+  serverConsole: ServerConsoleWriter
 }
 
 function generateSelfSignedCert(): { cert: string; key: string } {
@@ -115,6 +117,7 @@ export async function startGateway(options: GatewayOptions) {
     console: new ConsoleWriter(session.files.console, options.maxFileSizeMb),
     errors: new ErrorsWriter(session.files.errors, options.maxFileSizeMb),
     devEvents: new DevEventsWriter(session.files['dev-events'], options.maxFileSizeMb),
+    serverConsole: new ServerConsoleWriter(session.files['server-console'], options.maxFileSizeMb),
   }
   if (options.network && session.files.network) {
     writers.network = new NetworkWriter(session.files.network, options.maxFileSizeMb)
@@ -172,7 +175,7 @@ export async function startGateway(options: GatewayOptions) {
           }
 
           // Create per-project log directory
-          const channels = ['console', 'errors', 'dev-events']
+          const channels = ['console', 'errors', 'dev-events', 'server-console']
           if (options.network) channels.push('network')
           const { logDir, logPaths } = initProjectLogDir(data.directory, channels)
 
@@ -197,6 +200,7 @@ export async function startGateway(options: GatewayOptions) {
             console: new ConsoleWriter(logPaths.console, options.maxFileSizeMb),
             errors: new ErrorsWriter(logPaths.errors, options.maxFileSizeMb),
             devEvents: new DevEventsWriter(logPaths['dev-events'], options.maxFileSizeMb),
+            serverConsole: new ServerConsoleWriter(logPaths['server-console'], options.maxFileSizeMb),
             network: logPaths.network ? new NetworkWriter(logPaths.network, options.maxFileSizeMb) : undefined,
           })
 
@@ -385,6 +389,12 @@ export async function startGateway(options: GatewayOptions) {
           w.errors.write(payload)
           const logFile = (serverId && registry.get(serverId)?.logPaths?.errors) ?? session.files.errors ?? ''
           sendNotificationToAll('errors', payload.message ?? 'Error', logFile, `get_diagnostics`)
+        } else if (channel === 'server-console') {
+          w.serverConsole.write(payload)
+          if (payload.level === 'error') {
+            const logFile = (serverId && registry.get(serverId)?.logPaths?.['server-console']) ?? session.files['server-console'] ?? ''
+            sendNotificationToAll('server', payload.args?.join(' ') ?? 'Server error', logFile, `get_diagnostics`)
+          }
         } else if (channel === 'network' && w.network) {
           w.network.write(payload)
         }

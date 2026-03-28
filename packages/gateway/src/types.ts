@@ -30,6 +30,13 @@ export interface ErrorPayload {
   line?: number
 }
 
+export interface ServerConsolePayload {
+  level: 'log' | 'warn' | 'error' | 'info' | 'debug'
+  args: string[]
+  source: 'server'
+  stack?: string
+}
+
 export interface NetworkPayload {
   method: string
   url: string
@@ -60,6 +67,7 @@ export interface BuildStatus {
 export interface DiagnosticSummary {
   error_count: number
   warning_count: number
+  server_error_count: number
   failed_requests: number
   has_unhandled_rejections: boolean
 }
@@ -70,6 +78,7 @@ export interface DiagnosticsResult {
     console: HarnessEvent[]
     errors: HarnessEvent[]
     network: HarnessEvent[]
+    server_console: HarnessEvent[]
   }
   summary: DiagnosticSummary
   checkpoint_ts: number | null

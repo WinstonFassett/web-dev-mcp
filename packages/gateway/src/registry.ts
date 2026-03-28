@@ -28,7 +28,7 @@ export function serverIdFromDirectory(directory: string): string {
 /** Create per-project log directory and return channel file paths */
 export function initProjectLogDir(
   directory: string,
-  channels: string[] = ['console', 'errors', 'dev-events'],
+  channels: string[] = ['console', 'errors', 'dev-events', 'server-console'],
 ): { logDir: string; logPaths: Record<string, string> } {
   const logDir = join(directory, '.web-dev-mcp')
   mkdirSync(logDir, { recursive: true })

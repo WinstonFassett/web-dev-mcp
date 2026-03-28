@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs'
-import type { HarnessEvent, DiagnosticsResult, DiagnosticSummary, ConsolePayload, ErrorPayload, NetworkPayload } from './types.js'
+import type { HarnessEvent, DiagnosticsResult, DiagnosticSummary, ConsolePayload, ErrorPayload, NetworkPayload, ServerConsolePayload } from './types.js'
 import type { SessionState } from './session.js'
 import type { DevEventsWriter } from './writers/dev-events.js'
 
@@ -123,9 +123,18 @@ export function getDiagnostics(
     browserId: query.browserId,
   })
 
+  const serverConsoleResult = queryLogs(files, {
+    channel: 'server-console',
+    sinceId: since_ts ? findFirstIdAfterTs(files['server-console'], since_ts) : 0,
+    limit: query.limit,
+    level: query.level,
+    search: query.search,
+  })
+
   const summary: DiagnosticSummary = {
     error_count: 0,
     warning_count: 0,
+    server_error_count: 0,
     failed_requests: 0,
     has_unhandled_rejections: false
   }
@@ -151,6 +160,12 @@ export function getDiagnostics(
     }
   }
 
+  for (const event of serverConsoleResult.events) {
+    const payload = event.payload as ServerConsolePayload
+    if (payload.level === 'error') summary.server_error_count++
+    if (payload.level === 'warn') summary.warning_count++
+  }
+
   const buildStatus = devEventsWriter
     ? devEventsWriter.getStatus(since_ts)
     : { last_update_at: null, last_error_at: null, last_error: undefined, update_count: 0, error_count: 0, pending: false }
@@ -160,7 +175,8 @@ export function getDiagnostics(
     logs: {
       console: consoleResult.events,
       errors: errorsResult.events,
-      network: networkResult.events
+      network: networkResult.events,
+      server_console: serverConsoleResult.events,
     },
     summary,
     checkpoint_ts: session.checkpointTs
