@@ -23,15 +23,15 @@ graph LR
 npx web-dev-mcp-gateway
 ```
 
-### 2. Open your dev app or any site through it
+### 2. Open any site through it
 
-```bash
-# Your dev server
-npx web-dev-mcp-gateway --target http://localhost:5173
-
-# Or browse any URL through the gateway proxy
-# http://localhost:3333/https://example.com/
+Browse any URL through the gateway proxy:
 ```
+http://localhost:3333/http://localhost:5173/
+http://localhost:3333/https://example.com/
+```
+
+Or use a framework adapter for tighter integration (see Install section).
 
 ### 3. Connect your agent
 
@@ -167,9 +167,9 @@ Both frameworks need the gateway running. It's a lightweight daemon on `:3333`.
 
 ## Gateway modes
 
-**Proxy** (`--target http://localhost:3000`): reverse proxy, injects client script into HTML responses.
+**Dynamic proxy**: browse `http://localhost:3333/http://your-dev-server/` to proxy any URL with client.js injection. Works with any dev server, no config needed.
 
-**Hub** (no `--target`): standalone MCP/RPC/capnweb hub. Dev servers connect via adapters. Also supports dynamic proxy — browse `http://localhost:3333/https://any-url.com/` to proxy and instrument any page.
+**Framework adapters**: Vite and Next.js adapters inject client.js natively and forward HMR/build events to the gateway. Tighter integration, no proxy needed.
 
 ## How it works
 
