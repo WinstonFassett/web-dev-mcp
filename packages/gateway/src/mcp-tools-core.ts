@@ -107,7 +107,7 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
         const browser = {
           eval: (expression: string) => stub.eval(expression),
           markdown: (selector?: string) => (stub as any).getPageMarkdown(selector),
-          screenshot: (selector?: string) => (stub as any).screenshot(selector),
+          screenshot: (selectorOrOpts?: string | Record<string, any>) => (stub as any).screenshot(selectorOrOpts),
           navigate: (url: string) => (stub as any).navigate(url),
           click: (selector: string) => (stub as any).click(selector),
           fill: (selector: string, value: string) => (stub as any).fill(selector, value),

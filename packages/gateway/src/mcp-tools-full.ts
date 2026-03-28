@@ -168,17 +168,30 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
 
   mcp.tool(
     'screenshot',
-    'Take a screenshot of the page or a specific element. Returns base64 PNG.',
-    { selector: z.string().optional().describe('CSS selector. Omit for full page.') },
+    'Take a screenshot. Presets: viewport (default), element, full, thumb, hd. Default is JPEG 80 quality, max 1024px wide.',
+    {
+      selector: z.string().optional().describe('CSS selector. Omit for viewport.'),
+      preset: z.enum(['viewport', 'element', 'full', 'thumb', 'hd']).optional().describe('Screenshot preset. Default: viewport (or element if selector given).'),
+      format: z.enum(['png', 'jpeg']).optional().describe('Image format. Default: jpeg.'),
+      quality: z.number().optional().describe('JPEG quality 1-100. Default: 80.'),
+    },
     async (args) => {
       const stub = getStub(ctx)
       if (!stub) return noBrowser(ctx)
       try {
-        const result = await stub.screenshot(args.selector)
+        const opts: any = {}
+        if (args.selector) opts.selector = args.selector
+        if (args.preset) opts.preset = args.preset
+        if (args.format) opts.format = args.format
+        if (args.quality) opts.quality = args.quality
+        const result = await stub.screenshot(Object.keys(opts).length > 0 ? opts : undefined)
         if ((result as any).error) return errResult(result)
+        const data = (result as any).data
+        const mimeType = data.startsWith('data:image/png') ? 'image/png' : 'image/jpeg'
+        const base64 = data.replace(/^data:image\/\w+;base64,/, '')
         return {
           content: [
-            { type: 'image' as const, data: (result as any).data.replace(/^data:image\/png;base64,/, ''), mimeType: 'image/png' },
+            { type: 'image' as const, data: base64, mimeType },
             { type: 'text' as const, text: JSON.stringify({ width: (result as any).width, height: (result as any).height }, null, 2) },
           ],
         }
