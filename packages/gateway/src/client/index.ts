@@ -336,25 +336,31 @@
           const target = selector ? document.querySelector(selector) : document.documentElement
           if (!target) return { error: 'Element not found: ' + selector }
 
-          if (!(window as any).__html2canvas) {
+          if (!(window as any).__modernScreenshot) {
             try {
-              const mod = await import(/* @vite-ignore */ 'https://esm.sh/html2canvas@1.4.1')
-              ;(window as any).__html2canvas = mod.default || mod
+              const mod = await import(/* @vite-ignore */ 'https://esm.sh/modern-screenshot@4.6.8')
+              ;(window as any).__modernScreenshot = mod
             } catch (err: any) {
-              return { error: 'Failed to load html2canvas: ' + err.message }
+              return { error: 'Failed to load modern-screenshot: ' + err.message }
             }
           }
 
           try {
-            const canvas = await (window as any).__html2canvas(target, {
-              useCORS: true,
-              logging: false,
-              scale: window.devicePixelRatio || 1,
+            const { domToPng } = (window as any).__modernScreenshot
+            const dataUrl = await domToPng(target, {
+              scale: 1,
+            })
+            // Extract dimensions from the rendered image
+            const img = new Image()
+            await new Promise<void>((resolve, reject) => {
+              img.onload = () => resolve()
+              img.onerror = () => reject(new Error('Failed to decode screenshot'))
+              img.src = dataUrl
             })
             return {
-              data: canvas.toDataURL('image/png'),
-              width: canvas.width,
-              height: canvas.height,
+              data: dataUrl,
+              width: img.naturalWidth,
+              height: img.naturalHeight,
             }
           } catch (err: any) {
             return { error: 'Screenshot failed: ' + err.message }
