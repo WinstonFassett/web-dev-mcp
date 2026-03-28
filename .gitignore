@@ -4,6 +4,7 @@
 node_modules/
 dist/
 .next/
+.env
 
 # MCP log directories
 .vite-mcp/
