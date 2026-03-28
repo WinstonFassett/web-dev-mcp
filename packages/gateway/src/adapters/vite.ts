@@ -11,9 +11,6 @@ import WebSocket from 'ws'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-const VIRTUAL_MODULE_ID = 'virtual:web-dev-mcp-client'
-const RESOLVED_VIRTUAL_MODULE_ID = '\0' + VIRTUAL_MODULE_ID
-
 export interface ViteAdapterOptions {
   gateway?: string // Gateway URL, default: http://localhost:3333
 }
@@ -173,43 +170,16 @@ export function webDevMcp(options: ViteAdapterOptions = {}): Plugin {
       })
     },
 
-    resolveId(id) {
-      if (id === VIRTUAL_MODULE_ID) return RESOLVED_VIRTUAL_MODULE_ID
-    },
-
-    load(id) {
-      if (id === RESOLVED_VIRTUAL_MODULE_ID) {
-        // Virtual module sets gateway origin + server ID and loads client.js via script tag
-        let code = `window.__WEB_DEV_MCP_ORIGIN__ = ${JSON.stringify(gatewayUrl)};\n`
-        if (serverId) {
-          code += `window.__WEB_DEV_MCP_SERVER__ = ${JSON.stringify(serverId)};\n`
-        }
-        code += `
-if (!window.__WEB_DEV_MCP_LOADED__) {
-  const s = document.createElement('script');
-  s.src = '/__client.js';
-  document.head.appendChild(s);
-}
-`
-        return code
+    transformIndexHtml() {
+      // Inject client setup + script into every HTML entry — framework-agnostic
+      let initScript = `window.__WEB_DEV_MCP_ORIGIN__ = ${JSON.stringify(gatewayUrl)};`
+      if (serverId) {
+        initScript += `\nwindow.__WEB_DEV_MCP_SERVER__ = ${JSON.stringify(serverId)};`
       }
-    },
-
-    transform(code, id) {
-      if (!id.endsWith('.tsx') && !id.endsWith('.ts') && !id.endsWith('.jsx') && !id.endsWith('.js')) {
-        return
-      }
-      if (
-        code.includes('createRoot') ||
-        code.includes('ReactDOM.render') ||
-        code.includes('hydrateRoot')
-      ) {
-        if (code.includes(VIRTUAL_MODULE_ID)) return
-        return {
-          code: `import '${VIRTUAL_MODULE_ID}';\n${code}`,
-          map: null,
-        }
-      }
+      return [
+        { tag: 'script', children: initScript, injectTo: 'head-prepend' },
+        { tag: 'script', attrs: { src: '/__client.js' }, injectTo: 'head-prepend' },
+      ]
     },
 
     hotUpdate(opts: HotUpdateOptions) {
