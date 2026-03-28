@@ -641,17 +641,5 @@
     originalConsole.warn('[web-dev-mcp] Could not load RPC modules:', err)
   })
 
-  // Preload screenshot library on idle (instant when actually needed)
-  if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(() => {
-      const libUrl = gatewayOrigin + '/__libs/modern-screenshot.js'
-      import(/* @vite-ignore */ libUrl).then(mod => {
-        ;(window as any).__modernScreenshot = mod
-      }).catch(() => {
-        // Gateway may not serve /__libs/ yet — will fall back to esm.sh on first screenshot()
-      })
-    })
-  }
-
   originalConsole.log('[web-dev-mcp] Client loaded')
 })()
