@@ -108,6 +108,25 @@ return await state.store.getState()
 return await state.store.getState()
 ```
 
+## Monitoring logs
+
+**Tail NDJSON files** (coding agents with terminal):
+```bash
+tail -f .web-dev-mcp/console.ndjson              # all console events
+tail -f .web-dev-mcp/console.ndjson | jq .        # pretty-print
+tail -f .web-dev-mcp/errors.ndjson                # errors only
+```
+Log paths are in `.web-dev-mcp/` (gateway) or `.vite-mcp/` (vite standalone). Each line is `{"id":N,"ts":N,"channel":"...","payload":{...,"browserId":"..."}}`.
+
+**SSE stream** (dashboards, web UIs):
+```
+GET /__admin/events                              # all events
+GET /__admin/events?browser_id=abc123            # filtered by browser
+```
+Streams `event: log`, `event: browser_connect`, `event: browser_disconnect`.
+
+**Admin UI** (`/__admin`): visual dashboard with real-time log viewer, browser list, REPL.
+
 ## Gotchas
 
 - `browser.navigate()` disconnects RPC — wait ~2-3s before next call. For SPA route changes, prefer `browser.click('text=Settings')` on a nav element.
