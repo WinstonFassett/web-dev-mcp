@@ -8,6 +8,7 @@ dist/
 # MCP log directories
 .vite-mcp/
 .web-dev-mcp/
+.playwright-mcp/
 
 # IDE
 .vscode/settings.json
