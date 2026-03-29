@@ -48,6 +48,8 @@
     "url": "git+https://github.com/WinstonFassett/web-dev-mcp.git",
     "directory": "packages/adapter-vite"
   },
+  "homepage": "https://github.com/WinstonFassett/web-dev-mcp",
+  "bugs": { "url": "https://github.com/WinstonFassett/web-dev-mcp/issues" },
   "license": "MIT",
   "publishConfig": {
     "access": "public"

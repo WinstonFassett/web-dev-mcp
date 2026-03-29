@@ -38,13 +38,15 @@
     "url": "git+https://github.com/WinstonFassett/web-dev-mcp.git",
     "directory": "packages/adapter-nextjs"
   },
+  "homepage": "https://github.com/WinstonFassett/web-dev-mcp",
+  "bugs": { "url": "https://github.com/WinstonFassett/web-dev-mcp/issues" },
   "license": "MIT",
   "publishConfig": {
     "access": "public"
   },
   "peerDependencies": {
     "@winstonfassett/web-dev-mcp-gateway": "^0.1.0",
-    "next": ">=15.0.0"
+    "next": ">=14.0.0"
   },
   "peerDependenciesMeta": {
     "next": {

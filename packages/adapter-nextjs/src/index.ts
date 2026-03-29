@@ -65,19 +65,23 @@ export function withWebDevMcp(
   const serverId = String(process.pid)
   process.env.__WEB_DEV_MCP_SERVER__ = serverId
 
-  // Auto-start gateway, then register + capture console + dev events
-  ensureGateway(gatewayUrl).then(async () => {
-    await patchConsole(gatewayUrl, serverId)
-    _devEvents = await connectDevEvents(gatewayUrl, serverId)
+  // Guard: Next.js forks workers that re-run this code. Only register once.
+  if (!process.env.__WEB_DEV_MCP_REGISTERED__) {
+    process.env.__WEB_DEV_MCP_REGISTERED__ = '1'
 
-    registerWithRetry(gatewayUrl, {
-      id: serverId,
-      type: 'nextjs',
-      port: parseInt(process.env.PORT || '3000', 10),
-      pid: process.pid,
-      directory: process.cwd(),
+    ensureGateway(gatewayUrl).then(async () => {
+      await patchConsole(gatewayUrl, serverId)
+      _devEvents = await connectDevEvents(gatewayUrl, serverId)
+
+      registerWithRetry(gatewayUrl, {
+        id: serverId,
+        type: 'nextjs',
+        port: parseInt(process.env.PORT || '3000', 10),
+        pid: process.pid,
+        directory: process.cwd(),
+      })
     })
-  })
+  }
 
   return {
     ...nextConfig,

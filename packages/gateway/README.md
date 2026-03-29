@@ -1,94 +1,33 @@
-# web-dev-mcp
+# @winstonfassett/web-dev-mcp-gateway
 
 Universal MCP gateway for web development. Proxy any dev server to give AI agents live browser observability — console logs, errors, network requests, DOM queries, and JS evaluation.
 
-Works with **any** HTTP dev server: Next.js, Vite, Remix, Rails, Django, static files, etc.
+Works with **any** HTTP dev server: Next.js, Vite, Remix, Rails, Django, static files.
 
-## Quick Start
+## Quick Start (standalone proxy)
 
 ```bash
-# Terminal 1: Start your dev server (any framework)
+# Start your dev server
 npm run dev  # → localhost:3000
 
-# Terminal 2: Start the gateway
+# Start the gateway
 npx web-dev-mcp --target http://localhost:3000
 
-# Browser: Visit http://localhost:3333 (proxied + instrumented)
-# LLM: Connect MCP to http://localhost:3333/__mcp/sse
+# Browse http://localhost:3333 (proxied + instrumented)
+# MCP endpoint: http://localhost:3333/__mcp/sse
 ```
 
-## Next.js Integration
+## Framework Adapters
 
-For Next.js apps, use the native config wrapper instead of the generic proxy:
+For deeper integration (auto-start, build events, HMR status), use a framework adapter:
 
-```bash
-npm install -D web-dev-mcp
-```
+| Framework | Package | Setup |
+|-----------|---------|-------|
+| Vite | [`@winstonfassett/web-dev-mcp-vite`](https://www.npmjs.com/package/@winstonfassett/web-dev-mcp-vite) | 2-line plugin |
+| Storybook | [`@winstonfassett/web-dev-mcp-vite`](https://www.npmjs.com/package/@winstonfassett/web-dev-mcp-vite) | 1-line addon |
+| Next.js | [`@winstonfassett/web-dev-mcp-nextjs`](https://www.npmjs.com/package/@winstonfassett/web-dev-mcp-nextjs) | 1-line config wrapper |
 
-```js
-// next.config.js
-import { withWebDevMcp } from 'web-dev-mcp/nextjs'
-
-const nextConfig = {
-  // your config
-}
-
-export default withWebDevMcp(nextConfig, {
-  gatewayUrl: 'http://localhost:3333',
-  network: true,
-})
-```
-
-Start the gateway in one terminal:
-
-```bash
-npx web-dev-mcp --target http://localhost:3000 --port 3333
-```
-
-Then start Next.js normally:
-
-```bash
-npm run dev
-```
-
-The wrapper automatically injects browser instrumentation via webpack — no manual code changes required.
-
-## Storybook Integration
-
-For Storybook 8+ (Vite builder), use the preset addon:
-
-```bash
-npm install -D web-dev-mcp-gateway
-```
-
-```ts
-// .storybook/main.ts
-export default {
-  addons: ['web-dev-mcp-gateway/storybook'],
-  framework: '@storybook/react-vite',
-}
-```
-
-Start the gateway in one terminal:
-
-```bash
-npx web-dev-mcp-gateway
-```
-
-Then start Storybook:
-
-```bash
-npm run storybook
-```
-
-The addon injects browser instrumentation into the preview iframe via Vite's `viteFinal` hook. Story navigation is SPA-style, so capnweb RPC stays connected across story changes.
-
-Storybook story URLs follow a deterministic pattern:
-```
-http://localhost:6006/iframe.html?id={category}-{component}--{story}
-```
-
-For example: `?id=components-button--primary`, `?id=forms-input--with-validation`.
+Adapters auto-start the gateway — no separate terminal needed.
 
 ## How It Works
 
@@ -96,75 +35,41 @@ For example: `?id=components-button--primary`, `?id=forms-input--with-validation
 Browser ──→ Gateway (:3333) ──→ Dev Server (:3000)
    │             │
    ├─ /__events  │  Console/error/network events (WebSocket)
-   ├─ /__rpc     │  Eval/DOM queries via capnweb RPC (WebSocket)
+   ├─ /__rpc     │  DOM queries via capnweb RPC (WebSocket)
    └─ /__mcp/sse │  MCP tools for AI agents (SSE)
 ```
 
 1. Gateway proxies all HTTP/WebSocket traffic to your dev server
-2. HTML responses get a `<script>` tag injected that loads the client
-3. Client patches `console.*`, error handlers, and `fetch`/`XHR`
-4. Events stream to gateway via WebSocket → written to NDJSON log files
-5. capnweb RPC enables bidirectional browser communication (eval, DOM queries)
-6. MCP server exposes tools that AI agents can call
+2. Injected `<script>` patches `console.*`, error handlers, `fetch`/`XHR`
+3. Events stream to gateway → written to NDJSON log files
+4. capnweb RPC enables bidirectional browser communication
+5. MCP server exposes tools that AI agents call
 
-## MCP Tools
+## MCP Tools (core set)
 
 | Tool | Description |
 |------|-------------|
-| `get_session_info` | Log paths, server URLs, active channels |
-| `get_diagnostics` | Consolidated logs + summary (single call) |
-| `get_logs` | Query specific channel with filtering/pagination |
-| `clear_logs` | Truncate logs, set checkpoint for incremental reads |
-| `eval_in_browser` | Run JavaScript in the browser, return result |
-| `query_dom` | CSS selector → cleaned HTML snapshot |
-| `wait_for_condition` | Poll until JS expression is truthy |
+| `set_project` | Set active project (when multiple dev servers are registered) |
+| `list_projects` | List registered dev servers + gateway |
+| `list_browsers` | List connected browser tabs |
+| `get_diagnostics` | Consolidated logs + errors + build status snapshot |
+| `clear` | Truncate logs, set checkpoint for incremental reads |
+| `eval_js_rpc` | Run JS with `document`/`window` as remote DOM proxies. Persistent `state` + `browser.*` helpers |
 
-## CLI Options
+Full toolset (23 tools): `/__mcp/sse?tools=full`
+
+## CLI
 
 ```
-npx web-dev-mcp --target <url> [options]
+npx web-dev-mcp [options]
 
 Options:
-  --target, -t <url>   Dev server URL to proxy (required)
+  --target, -t <url>   Dev server URL to proxy
   --port, -p <port>    Gateway port (default: 3333)
   --network            Capture fetch/XHR requests
   --help, -h           Show help
 ```
 
-## Architecture
+## License
 
-### Client (injected into browser)
-
-- Patches `console.log/warn/error/info/debug` → sends to `/__events` WebSocket
-- Registers `window.error` and `unhandledrejection` handlers
-- Patches `fetch` and `XMLHttpRequest` (when `--network` flag used)
-- Connects capnweb RPC to `/__rpc` for eval/queryDom/CDP
-
-### Server (gateway process)
-
-- HTTP proxy via `http-proxy` with HTML response interception
-- Events WebSocket (`/__events`) → NDJSON writers (console, errors, network)
-- RPC WebSocket (`/__rpc`) → capnweb sessions for browser communication
-- MCP SSE server (`/__mcp/sse`) → tools for AI agents
-- Session management → `/tmp/web-dev-mcp-{hash}/` log files
-
-### Log Files
-
-Created in `/tmp/web-dev-mcp-{hash}/`:
-- `session.json` — metadata
-- `console.ndjson` — console logs
-- `errors.ndjson` — errors + unhandled exceptions
-- `network.ndjson` — fetch/XHR (opt-in with `--network`)
-
-## Development
-
-```bash
-cd packages/web-dev-mcp
-npm install
-npm run build          # tsc + esbuild client bundle
-
-# Test with included test server
-node test-target.mjs   # Simple HTML server on :4567
-node dist/cli.js --target http://localhost:4567 --network
-node test-gateway.mjs  # Playwright test
-```
+MIT
