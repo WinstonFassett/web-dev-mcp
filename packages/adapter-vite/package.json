@@ -34,7 +34,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc"
+    "build": "tsc && cp src/storybook/*.cjs dist/storybook/"
   },
   "keywords": [
     "vite",
