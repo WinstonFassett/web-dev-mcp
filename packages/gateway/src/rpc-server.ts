@@ -125,6 +125,24 @@ export function getBrowserStub(serverId?: string): RpcStub<BrowserStub> | undefi
   return browsers.get(connId)?.stub
 }
 
+/** Disconnect and remove all browsers associated with a given serverId */
+export function removeBrowsersByServer(serverId: string): number {
+  let removed = 0
+  for (const [connId, conn] of browsers) {
+    if (conn.serverId === serverId) {
+      browsers.delete(connId)
+      const idx = connectionOrder.indexOf(connId)
+      if (idx >= 0) connectionOrder.splice(idx, 1)
+      // Close the underlying WebSocket via the transport abort
+      try { (conn.stub as any)[Symbol.dispose]?.() } catch {}
+      console.log(`[web-dev-mcp] Browser evicted (${connId}) — server ${serverId} removed`)
+      for (const cb of browserEventListeners) cb('disconnect', { connId, browserId: conn.browserId, serverId })
+      removed++
+    }
+  }
+  return removed
+}
+
 export function getAllBrowsers(): Array<{ connId: string; browserId: string | null; serverId: string | null; connectedAt: number }> {
   return Array.from(browsers.entries()).map(([connId, conn]) => ({
     connId,

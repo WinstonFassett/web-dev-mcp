@@ -15,7 +15,7 @@ import { DevEventsWriter, type BuildEventPayload } from './writers/dev-events.js
 import { ServerConsoleWriter } from './writers/server-console.js'
 import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './mcp-server.js'
 import { nodeHttpBatchRpcResponse } from 'capnweb'
-import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi, onBrowserEvent, emitLogEvent } from './rpc-server.js'
+import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi, onBrowserEvent, emitLogEvent, removeBrowsersByServer } from './rpc-server.js'
 import { handleAdmin } from './admin.js'
 import { autoRegister } from './auto-register.js'
 import { ServerRegistry, type RegisteredServer, makeServerId, makeProjectId, initProjectLogDir } from './registry.js'
@@ -100,11 +100,14 @@ export async function startGateway(options: GatewayOptions) {
   // Create server registry for hybrid architecture
   const registry = new ServerRegistry()
 
-  // Start heartbeat to clean up dead servers
+  // Start heartbeat to clean up dead servers and their orphaned browsers
   const heartbeatInterval = setInterval(() => {
-    const removed = registry.cleanupDeadServers()
-    if (removed > 0) {
-      console.log(`[registry] Cleaned up ${removed} dead server(s)`)
+    const removedIds = registry.cleanupDeadServers()
+    for (const id of removedIds) {
+      removeBrowsersByServer(id)
+    }
+    if (removedIds.length > 0) {
+      console.log(`[registry] Cleaned up ${removedIds.length} dead server(s)`)
     }
   }, 5000)
 
@@ -288,6 +291,7 @@ export async function startGateway(options: GatewayOptions) {
       if (serverId && registry.has(serverId)) {
         const server = registry.get(serverId)
         registry.remove(serverId)
+        removeBrowsersByServer(serverId)
         if (server) projectWriters.delete(server.directory)
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ success: true }))

@@ -154,8 +154,8 @@ export class ServerRegistry {
    * Remove servers whose processes are no longer running.
    * Skips servers registered within the last 30s (grace period for process forks).
    */
-  cleanupDeadServers(): number {
-    let removed = 0
+  cleanupDeadServers(): string[] {
+    const removedIds: string[] = []
     const now = Date.now()
     for (const server of this.getAll()) {
       // Grace period: don't kill recently registered servers (process may be forking)
@@ -166,9 +166,9 @@ export class ServerRegistry {
       } catch (err) {
         // Process doesn't exist
         this.remove(server.id)
-        removed++
+        removedIds.push(server.id)
       }
     }
-    return removed
+    return removedIds
   }
 }
