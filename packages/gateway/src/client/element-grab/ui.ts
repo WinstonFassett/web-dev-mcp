@@ -33,19 +33,42 @@ export function createLabel(root: HTMLElement, callbacks: {
   container.style.display = 'none'
   root.appendChild(container)
 
+  // Persistent DOM nodes for hover state (avoids innerHTML rebuild)
+  const arrow = document.createElement('div')
+  arrow.className = 'eg-arrow'
+
+  const panel = document.createElement('div')
+  panel.className = 'eg-panel'
+  panel.style.padding = '6px 8px'
+
+  const tagContainer = document.createElement('div')
+  tagContainer.className = 'eg-tag'
+
+  const tagNameSpan = document.createElement('span')
+  tagNameSpan.className = 'eg-tag-name'
+
+  const componentSpan = document.createElement('span')
+  componentSpan.className = 'eg-tag-component'
+
+  const suffixSpan = document.createElement('span')
+  suffixSpan.className = 'eg-tag-suffix'
+
+  tagNameSpan.appendChild(componentSpan)
+  tagNameSpan.appendChild(suffixSpan)
+  tagContainer.appendChild(tagNameSpan)
+  panel.appendChild(tagContainer)
+  container.appendChild(arrow)
+  container.appendChild(panel)
+
   let state: LabelState = {
     visible: false, tagName: '', bounds: null, mouseX: 0, status: 'hovering',
   }
+  let currentMode: 'hover' | 'frozen' | 'copying' | 'copied' | 'none' = 'none'
 
-  const render = () => {
-    if (!state.visible || !state.bounds) {
-      container.style.display = 'none'
-      return
-    }
-    container.style.display = ''
-
-    // Position calculation
+  const updatePosition = () => {
     const bounds = state.bounds
+    if (!bounds) return
+
     const labelWidth = container.offsetWidth || 100
     const labelHeight = container.offsetHeight || 30
     const arrowSize = Math.max(ARROW_MIN_SIZE_PX, Math.min(ARROW_HEIGHT_PX, labelWidth * ARROW_MAX_LABEL_WIDTH_RATIO))
@@ -76,7 +99,6 @@ export function createLabel(root: HTMLElement, callbacks: {
     }
     if (top < vTop + VIEWPORT_MARGIN_PX) top = vTop + VIEWPORT_MARGIN_PX
 
-    // Arrow offset
     const arrowCenterPx = halfLabel - edgeOffsetX
     const arrowMinPx = Math.min(ARROW_LABEL_MARGIN_PX, halfLabel)
     const arrowMaxPx = Math.max(labelWidth - ARROW_LABEL_MARGIN_PX, halfLabel)
@@ -89,55 +111,181 @@ export function createLabel(root: HTMLElement, callbacks: {
     container.style.opacity = state.status === 'fading' ? '0' : '1'
     container.style.pointerEvents = (state.status === 'frozen' || state.status === 'copying') ? 'auto' : 'none'
 
-    // Build content
-    const tagDisplay = state.componentName
-      ? `<span class="eg-tag-component">${esc(state.componentName)}</span><span class="eg-tag-suffix">.${esc(state.tagName)}</span>`
-      : `<span class="eg-tag-component">${esc(state.tagName)}</span>`
-
-    // Arrow HTML
-    const arrowStyle = arrowPos === 'bottom'
-      ? `top:0;transform:translateX(-50%) translateY(-100%);border-bottom:${arrowSize}px solid white;`
-      : `bottom:0;transform:translateX(-50%) translateY(100%);border-top:${arrowSize}px solid white;`
-    const arrowHtml = `<div class="eg-arrow" style="left:calc(${ARROW_CENTER_PERCENT}% + ${arrowLeftOffset}px);border-left:${arrowSize}px solid transparent;border-right:${arrowSize}px solid transparent;${arrowStyle}"></div>`
-
-    if (state.status === 'hovering') {
-      container.innerHTML = `${arrowHtml}<div class="eg-panel animate-pop-in" style="padding:6px 8px"><div class="eg-tag"><span class="eg-tag-name">${tagDisplay}</span></div></div>`
-    } else if (state.status === 'frozen') {
-      container.innerHTML = `${arrowHtml}<div class="eg-panel" style="padding:0"><div style="display:flex;flex-direction:column;align-items:flex-start;min-width:150px;max-width:280px"><div style="display:flex;align-items:center;gap:4px;padding:6px 8px 4px 8px"><div class="eg-tag"><span class="eg-tag-name">${tagDisplay}</span></div></div><div class="eg-bottom-section"><div style="display:flex;justify-content:space-between;align-items:flex-end;width:100%;min-height:16px"><textarea class="eg-input" placeholder="Add context" rows="1" style="max-height:${TEXTAREA_MAX_HEIGHT_PX}px"></textarea><button class="eg-circle-btn eg-interactive-scale" aria-label="Submit"><svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button></div></div></div></div>`
-
-      const textarea = container.querySelector('textarea')!
-      const submitBtn = container.querySelector('.eg-circle-btn')!
-      queueMicrotask(() => textarea.focus({ preventScroll: true }))
-
-      textarea.addEventListener('keydown', (e: KeyboardEvent) => {
-        e.stopImmediatePropagation()
-        if (e.code === 'Enter' && !e.shiftKey) {
-          e.preventDefault()
-          callbacks.onsubmit(textarea.value)
-        } else if (e.code === 'Escape') {
-          e.preventDefault()
-          callbacks.ondismiss()
-        }
-      })
-      submitBtn.addEventListener('click', (e) => {
-        e.stopImmediatePropagation()
-        callbacks.onsubmit(textarea.value)
-      })
-    } else if (state.status === 'copying') {
-      container.innerHTML = `${arrowHtml}<div class="eg-panel" style="padding:6px 8px"><span class="eg-status shimmer-text">Grabbing…</span></div>`
-    } else if (state.status === 'copied') {
-      container.innerHTML = `${arrowHtml}<div class="eg-panel animate-success-pop" style="padding:6px 8px"><span class="eg-status" style="color:black">Copied</span></div>`
+    // Arrow position
+    arrow.style.left = `calc(${ARROW_CENTER_PERCENT}% + ${arrowLeftOffset}px)`
+    if (arrowPos === 'bottom') {
+      arrow.style.top = '0'
+      arrow.style.bottom = ''
+      arrow.style.transform = 'translateX(-50%) translateY(-100%)'
+      arrow.style.borderBottom = `${arrowSize}px solid white`
+      arrow.style.borderTop = ''
+    } else {
+      arrow.style.top = ''
+      arrow.style.bottom = '0'
+      arrow.style.transform = 'translateX(-50%) translateY(100%)'
+      arrow.style.borderTop = `${arrowSize}px solid white`
+      arrow.style.borderBottom = ''
     }
+    arrow.style.borderLeft = `${arrowSize}px solid transparent`
+    arrow.style.borderRight = `${arrowSize}px solid transparent`
+  }
+
+  const updateTagText = () => {
+    if (state.componentName) {
+      componentSpan.textContent = state.componentName
+      suffixSpan.textContent = `.${state.tagName}`
+    } else {
+      componentSpan.textContent = state.tagName
+      suffixSpan.textContent = ''
+    }
+  }
+
+  const switchToHover = () => {
+    if (currentMode === 'hover') return
+    currentMode = 'hover'
+    container.innerHTML = ''
+    panel.innerHTML = ''
+    panel.style.padding = '6px 8px'
+    panel.className = 'eg-panel animate-pop-in'
+    panel.appendChild(tagContainer)
+    container.appendChild(arrow)
+    container.appendChild(panel)
+  }
+
+  const switchToFrozen = () => {
+    currentMode = 'frozen'
+    container.innerHTML = ''
+    panel.innerHTML = ''
+    panel.style.padding = '0'
+    panel.className = 'eg-panel'
+
+    const wrapper = document.createElement('div')
+    Object.assign(wrapper.style, { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: '150px', maxWidth: '280px' })
+
+    const tagRow = document.createElement('div')
+    Object.assign(tagRow.style, { display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 8px 4px 8px' })
+    tagRow.appendChild(tagContainer)
+    wrapper.appendChild(tagRow)
+
+    const bottom = document.createElement('div')
+    bottom.className = 'eg-bottom-section'
+
+    const inputRow = document.createElement('div')
+    Object.assign(inputRow.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', width: '100%', minHeight: '16px' })
+
+    const textarea = document.createElement('textarea')
+    textarea.className = 'eg-input'
+    textarea.placeholder = 'Add context'
+    textarea.rows = 1
+    textarea.style.maxHeight = `${TEXTAREA_MAX_HEIGHT_PX}px`
+    queueMicrotask(() => textarea.focus({ preventScroll: true }))
+
+    textarea.addEventListener('keydown', (e: KeyboardEvent) => {
+      e.stopImmediatePropagation()
+      if (e.code === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        callbacks.onsubmit(textarea.value)
+      } else if (e.code === 'Escape') {
+        e.preventDefault()
+        callbacks.ondismiss()
+      }
+    })
+
+    const submitBtn = document.createElement('button')
+    submitBtn.className = 'eg-circle-btn eg-interactive-scale'
+    submitBtn.setAttribute('aria-label', 'Submit')
+    submitBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>`
+    submitBtn.addEventListener('click', (e) => {
+      e.stopImmediatePropagation()
+      callbacks.onsubmit(textarea.value)
+    })
+
+    inputRow.appendChild(textarea)
+    inputRow.appendChild(submitBtn)
+    bottom.appendChild(inputRow)
+    wrapper.appendChild(bottom)
+    panel.appendChild(wrapper)
+    container.appendChild(arrow)
+    container.appendChild(panel)
+  }
+
+  const switchToCopying = () => {
+    currentMode = 'copying'
+    container.innerHTML = ''
+    panel.innerHTML = ''
+    panel.style.padding = '6px 8px'
+    panel.className = 'eg-panel'
+    const status = document.createElement('span')
+    status.className = 'eg-status shimmer-text'
+    status.textContent = 'Grabbing…'
+    panel.appendChild(status)
+    container.appendChild(arrow)
+    container.appendChild(panel)
+  }
+
+  const switchToCopied = () => {
+    currentMode = 'copied'
+    container.innerHTML = ''
+    panel.innerHTML = ''
+    panel.style.padding = '6px 8px'
+    panel.className = 'eg-panel animate-success-pop'
+    const status = document.createElement('span')
+    status.className = 'eg-status'
+    status.style.color = 'black'
+    status.textContent = 'Copied'
+    panel.appendChild(status)
+    container.appendChild(arrow)
+    container.appendChild(panel)
+  }
+
+  const render = () => {
+    if (!state.visible || !state.bounds) {
+      container.style.display = 'none'
+      return
+    }
+    container.style.display = ''
+
+    switch (state.status) {
+      case 'hovering':
+        switchToHover()
+        updateTagText()
+        break
+      case 'frozen':
+        if (currentMode !== 'frozen') {
+          switchToFrozen()
+          updateTagText()
+        }
+        break
+      case 'copying':
+        if (currentMode !== 'copying') switchToCopying()
+        break
+      case 'copied':
+        if (currentMode !== 'copied') switchToCopied()
+        break
+    }
+
+    updatePosition()
   }
 
   return {
     update(s: Partial<LabelState>) {
+      const tagChanged = s.tagName !== undefined && s.tagName !== state.tagName
+      const componentChanged = s.componentName !== undefined && s.componentName !== state.componentName
       Object.assign(state, s)
+
+      // Fast path: hover position-only update (no DOM rebuild)
+      if (state.status === 'hovering' && currentMode === 'hover' && state.visible && state.bounds) {
+        if (tagChanged || componentChanged) updateTagText()
+        updatePosition()
+        return
+      }
+
       render()
     },
     hide() {
       state.visible = false
       state.status = 'hovering'
+      currentMode = 'none'
       container.style.display = 'none'
     },
     getPromptValue(): string {
@@ -154,7 +302,6 @@ export function createToolbar(root: HTMLElement, callbacks: { ontoggle: () => vo
 
   let edge: 'top' | 'right' | 'bottom' | 'left' = 'right'
   let ratio = 0.5
-  let isActive = false
   let dragging = false, dragStartX = 0, dragStartY = 0, hasDragged = false
 
   try {
@@ -214,7 +361,6 @@ export function createToolbar(root: HTMLElement, callbacks: { ontoggle: () => vo
 
   return {
     setActive(v: boolean) {
-      isActive = v
       pill.classList.toggle('active', v)
       dot.style.display = v ? '' : 'none'
     },
@@ -261,7 +407,6 @@ export function createContextMenu(root: HTMLElement) {
 
     container.innerHTML = `<div class="eg-panel" style="flex-direction:column;align-items:flex-start;min-width:100px;padding:0"><div style="display:flex;align-items:center;gap:4px;padding:6px 8px 4px 8px"><span class="eg-tag-name">${tagDisplay}</span></div><div class="eg-bottom-section" style="padding:4px 0">${items}</div></div>`
 
-    // Position below selection
     const arrowSize = ARROW_HEIGHT_PX
     let left = Math.max(LABEL_GAP_PX, Math.min(opts.position.x - 60, window.innerWidth - 140))
     let top = opts.bounds.y + opts.bounds.height + arrowSize + LABEL_GAP_PX
@@ -275,7 +420,6 @@ export function createContextMenu(root: HTMLElement) {
     container.style.top = `${top}px`
     container.style.zIndex = String(Z_INDEX_LABEL)
 
-    // Bind actions
     container.querySelectorAll('.eg-menu-item').forEach(btn => {
       const label = btn.getAttribute('data-action')!
       const action = opts.actions.find(a => a.label === label)
