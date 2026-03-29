@@ -2,7 +2,6 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Define theme tokens that reference CSS custom properties */
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--fg);
@@ -16,9 +15,10 @@
   --color-destructive: var(--destructive);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-info: var(--info);
 }
 
-/* Light mode values */
+/* Light mode */
 :root {
   --bg: #ffffff;
   --fg: #0a0a0a;
@@ -27,14 +27,19 @@
   --card: #ffffff;
   --card-fg: #0a0a0a;
   --border-color: #e5e5e5;
+
+  /* UI chrome — blue/gray only (never collide with severity) */
   --accent: #3b82f6;
   --accent-fg: #ffffff;
+  --info: #3b82f6;
+
+  /* Semantic — reserved for severity/status only */
   --destructive: #ef4444;
   --success: #22c55e;
   --warning: #f59e0b;
 }
 
-/* Dark mode values */
+/* Dark mode */
 .dark {
   --bg: #0a0a0a;
   --fg: #e5e5e5;
@@ -43,8 +48,11 @@
   --card: #141414;
   --card-fg: #e5e5e5;
   --border-color: #2a2a2a;
+
   --accent: #3b82f6;
   --accent-fg: #ffffff;
+  --info: #3b82f6;
+
   --destructive: #ef4444;
   --success: #22c55e;
   --warning: #f59e0b;
@@ -54,6 +62,7 @@ body {
   margin: 0;
   background-color: var(--bg);
   color: var(--fg);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
   -webkit-font-smoothing: antialiased;
 }

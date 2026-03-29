@@ -1,56 +1,148 @@
 <script lang="ts">
-  import { initTheme, toggleTheme } from './lib/theme'
-  import Dashboard from './lib/Dashboard.svelte'
-  import Repl from './lib/Repl.svelte'
+  import { initTheme, toggleTheme } from './lib/data/theme'
+  import { parseHash, navigate, type Route } from './lib/data/router'
+  import { getRegistry, refreshRegistry } from './lib/data/registry.svelte'
+  import { onConnectionChange } from './lib/data/gateway'
+  import { startLogging, stopLogging } from './lib/data/logs.svelte'
+  import SidebarTree from './lib/components/SidebarTree.svelte'
+  import GatewayView from './routes/GatewayView.svelte'
+  import ProjectView from './routes/ProjectView.svelte'
+  import ServerView from './routes/ServerView.svelte'
+  import BrowserView from './routes/BrowserView.svelte'
 
   let theme = $state(initTheme())
-  let activeTab: 'dashboard' | 'repl' = $state('dashboard')
+  let route: Route = $state(parseHash(location.hash))
+  let registry = getRegistry()
+  let gwConnected = $state(false)
+
+  // Listen for hash changes
+  $effect(() => {
+    const onHashChange = () => {
+      route = parseHash(location.hash)
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  })
+
+  // Default to gateway if no hash
+  $effect(() => {
+    if (!location.hash || location.hash === '#/' || location.hash === '#') {
+      location.hash = '#/gateway'
+    }
+  })
+
+  // Track gateway connection status
+  $effect(() => {
+    return onConnectionChange((connected) => {
+      gwConnected = connected
+      if (connected) refreshRegistry()
+    })
+  })
+
+  // Init: fetch registry + start log stream
+  $effect(() => {
+    refreshRegistry()
+    startLogging()
+    return () => stopLogging()
+  })
+
+  // Auto-select: if 1 project, 1 server, 1 browser → navigate there
+  $effect(() => {
+    if (route.view !== 'gateway') return
+    if (registry.projects.length === 1) {
+      const proj = registry.projects[0]
+      if (proj.servers.length === 1 && proj.browsers.length === 1) {
+        const srv = proj.servers[0]
+        const br = proj.browsers[0]
+        navigate({ view: 'browser', projectId: proj.projectId, port: String(srv.port), browserId: br.connId })
+      } else if (proj.servers.length === 1) {
+        navigate({ view: 'project', projectId: proj.projectId })
+      }
+    }
+  })
+
+  function onToggleTheme() {
+    theme = toggleTheme(theme)
+  }
 </script>
 
-<div class="min-h-screen flex flex-col">
-  <!-- Header -->
-  <header class="border-b border-border px-4 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-4">
-      <h1 class="text-lg font-semibold">web-dev-mcp gateway</h1>
-      <nav class="flex gap-1">
-        <button
-          class="px-3 py-1 rounded text-sm {activeTab === 'dashboard'
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
-          onclick={() => (activeTab = 'dashboard')}
-        >
-          Dashboard
-        </button>
-        <button
-          class="px-3 py-1 rounded text-sm {activeTab === 'repl'
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted'}"
-          onclick={() => (activeTab = 'repl')}
-        >
-          REPL
-        </button>
-      </nav>
+<div class="h-screen flex flex-col overflow-hidden">
+  <!-- Top bar -->
+  <header class="h-8 flex items-center justify-between px-3 border-b border-border shrink-0">
+    <div class="flex items-center gap-2">
+      <a href="#/gateway" class="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+        web-dev-mcp
+      </a>
+      <span class="text-xs text-muted-foreground/50">/</span>
+      <span class="text-xs text-foreground">
+        {#if route.view === 'gateway'}
+          __gateway
+        {:else if route.view === 'project'}
+          {route.projectId}
+        {:else if route.view === 'server'}
+          <a href="#/project/{route.projectId}" class="hover:text-accent transition-colors">{route.projectId}</a>
+          <span class="text-muted-foreground/50 mx-0.5">/</span>
+          :{route.port}
+        {:else if route.view === 'browser'}
+          <a href="#/project/{route.projectId}" class="hover:text-accent transition-colors">{route.projectId}</a>
+          <span class="text-muted-foreground/50 mx-0.5">/</span>
+          <a href="#/project/{route.projectId}/{route.port}" class="hover:text-accent transition-colors">:{route.port}</a>
+          <span class="text-muted-foreground/50 mx-0.5">/</span>
+          {route.browserId?.slice(0, 6)}
+        {/if}
+      </span>
     </div>
-
-    <button
-      class="p-2 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-      onclick={() => (theme = toggleTheme(theme))}
-      aria-label="Toggle theme"
-    >
-      {#if theme === 'dark'}
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-      {:else}
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-      {/if}
-    </button>
+    <div class="flex items-center gap-2">
+      <button
+        onclick={onToggleTheme}
+        class="text-xs text-muted-foreground hover:text-foreground transition-colors"
+        title="Toggle theme"
+      >
+        {theme === 'dark' ? '☀' : '◑'}
+      </button>
+    </div>
   </header>
 
-  <!-- Content -->
-  <main class="flex-1 p-4">
-    {#if activeTab === 'dashboard'}
-      <Dashboard />
-    {:else}
-      <Repl />
+  <!-- Main area: sidebar + content -->
+  <div class="flex flex-1 overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="w-44 border-r border-border shrink-0 overflow-y-auto p-2">
+      <SidebarTree {registry} {route} />
+    </aside>
+
+    <!-- Content -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+      <!-- Route content -->
+      <div class="flex-1 overflow-y-auto">
+        {#if route.view === 'gateway'}
+          <GatewayView {route} />
+        {:else if route.view === 'project'}
+          <ProjectView {route} />
+        {:else if route.view === 'server'}
+          <ServerView {route} />
+        {:else if route.view === 'browser'}
+          <BrowserView {route} />
+        {/if}
+      </div>
+
+      <!-- REPL bar (collapsed) -->
+      <div class="h-7 border-t border-border flex items-center px-3 shrink-0 cursor-pointer hover:bg-muted/50 transition-colors">
+        <span class="text-[10px] text-muted-foreground">REPL</span>
+        <span class="text-[10px] text-muted-foreground/50 ml-2">Ctrl+`</span>
+      </div>
+    </main>
+  </div>
+
+  <!-- Status footer -->
+  <footer class="h-6 border-t border-border flex items-center px-3 shrink-0 text-[10px] text-muted-foreground gap-3">
+    <span class="flex items-center gap-1">
+      <span class="w-1.5 h-1.5 rounded-full {gwConnected ? 'bg-success' : 'bg-destructive'}"></span>
+      {gwConnected ? 'connected' : 'disconnected'}
+    </span>
+    <span>{registry.projects.length} project{registry.projects.length !== 1 ? 's' : ''}</span>
+    <span>{registry.browsers.length} browser{registry.browsers.length !== 1 ? 's' : ''}</span>
+    {#if registry.uptimeMs > 0}
+      <span>uptime {Math.floor(registry.uptimeMs / 60000)}m</span>
     {/if}
-  </main>
+  </footer>
 </div>

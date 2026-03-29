@@ -1,13 +1,18 @@
 /**
  * capnweb connection to gateway's /__rpc/agent endpoint.
- * Singleton — shared across all components.
+ * Simple singleton — same pattern that worked in admin-svelte-v0.
  */
 
 import { RpcSession } from 'capnweb'
 
-interface GatewayStub {
+export interface GatewayStub {
   getBrowserCount(): Promise<number>
-  getBrowserList(): Promise<Array<{ connId: string; browserId: string | null; serverId: string | null; connectedAt: number }>>
+  getBrowserList(): Promise<Array<{
+    connId: string
+    browserId: string | null
+    serverId: string | null
+    connectedAt: number
+  }>>
   listProjects(): Promise<string[]>
   getProject(serverId?: string): any
   subscribeEvents(browserId?: string): Promise<ReadableStream>
@@ -69,38 +74,52 @@ function createTransport(ws: WebSocket) {
   }
 }
 
-const GATEWAY_WS = 'ws://localhost:3333/__rpc/agent'
+function getGatewayUrl(): string {
+  const loc = window.location
+  // Dev mode: any localhost port that isn't the gateway's own port
+  if (loc.hostname === 'localhost' && loc.port !== '3333') return 'ws://localhost:3333/__rpc/agent'
+  return `${loc.protocol === 'https:' ? 'wss:' : 'ws:'}//${loc.host}/__rpc/agent`
+}
 
-// Singleton connection — shared across all components
+// Connection change listeners (kept for App.svelte compatibility)
+type ConnectionListener = (connected: boolean) => void
+const listeners: Set<ConnectionListener> = new Set()
+
+export function onConnectionChange(fn: ConnectionListener): () => void {
+  listeners.add(fn)
+  return () => listeners.delete(fn)
+}
+
+// Simple singleton — exact same pattern as v0
 let _instance: Promise<GatewayConnection> | null = null
 
 export function getGateway(): Promise<GatewayConnection> {
   if (_instance) return _instance
   _instance = new Promise((resolve, reject) => {
-    const ws = new WebSocket(GATEWAY_WS)
-    let connected = true
+    const ws = new WebSocket(getGatewayUrl())
 
     ws.addEventListener('open', () => {
       const transport = createTransport(ws)
       const session = new RpcSession<GatewayStub>(transport)
       const stub = session.getRemoteMain()
 
+      for (const fn of listeners) fn(true)
+
       resolve({
         stub,
-        close() { connected = false; ws.close(); _instance = null },
-        get connected() { return connected && ws.readyState === WebSocket.OPEN },
+        close() { ws.close(); _instance = null },
+        get connected() { return ws.readyState === WebSocket.OPEN },
       })
     })
 
     ws.addEventListener('error', () => {
-      if (!connected) return
       _instance = null
       reject(new Error('Could not connect to gateway'))
     })
 
     ws.addEventListener('close', () => {
-      connected = false
       _instance = null
+      for (const fn of listeners) fn(false)
     })
   })
   return _instance
