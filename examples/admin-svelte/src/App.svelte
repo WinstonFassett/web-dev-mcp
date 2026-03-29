@@ -4,8 +4,10 @@
   import { getRegistry, refreshRegistry } from './lib/data/registry.svelte'
   import { onConnectionChange } from './lib/data/gateway'
   import { startLogging, stopLogging } from './lib/data/logs.svelte'
+  import { trackNavigation } from './lib/data/nav-history'
   import SidebarTree from './lib/components/SidebarTree.svelte'
   import ReplPanel from './lib/components/ReplPanel.svelte'
+  import CommandPalette from './lib/components/CommandPalette.svelte'
   import GatewayView from './routes/GatewayView.svelte'
   import ProjectView from './routes/ProjectView.svelte'
   import ServerView from './routes/ServerView.svelte'
@@ -17,10 +19,17 @@
   let gwConnected = $state(false)
   let replOpen = $state(false)
 
-  // Listen for hash changes
+  // Palette callbacks
+  const paletteCallbacks = {
+    onToggleTheme: () => { theme = toggleTheme(theme) },
+    onToggleRepl: () => { replOpen = !replOpen },
+  }
+
+  // Listen for hash changes + track nav history
   $effect(() => {
     const onHashChange = () => {
       route = parseHash(location.hash)
+      trackNavigation(location.hash)
     }
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
@@ -152,3 +161,5 @@
     {/if}
   </footer>
 </div>
+
+<CommandPalette {registry} callbacks={paletteCallbacks} />

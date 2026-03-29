@@ -66,3 +66,78 @@ body {
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
 }
+
+/* ── Command palette theme overrides ─────────────────────────── */
+/* Remap svelte-command-palette hardcoded colors to our CSS vars  */
+
+.cp-container {
+  background: var(--card) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--border-color) !important;
+  border-radius: 8px !important;
+  font-family: inherit !important;
+}
+
+.cp-container form {
+  border-bottom-color: var(--border-color) !important;
+}
+
+.cp-input {
+  color: var(--fg) !important;
+  font-family: inherit !important;
+  font-size: 13px !important;
+}
+
+.cp-input::placeholder {
+  color: var(--muted-fg) !important;
+}
+
+.cp-search-icon {
+  color: var(--muted-fg) !important;
+}
+
+.cp-group-header {
+  color: var(--muted-fg) !important;
+  font-family: inherit !important;
+  font-size: 10px !important;
+}
+
+.cp-result:hover,
+.cp-result-active {
+  background: var(--muted) !important;
+}
+
+.cp-result-icon {
+  background: var(--muted) !important;
+}
+
+.cp-result-title {
+  color: var(--fg) !important;
+  font-size: 12px !important;
+}
+
+.cp-result-subtitle {
+  color: var(--muted-fg) !important;
+  font-size: 11px !important;
+}
+
+.cp-result-description {
+  color: var(--muted-fg) !important;
+  font-size: 10px !important;
+  opacity: 0.7;
+}
+
+.cp-empty-content {
+  color: var(--muted-fg) !important;
+}
+
+.cp-empty-content p {
+  color: var(--fg) !important;
+}
+
+/* Keyboard button (Esc/shortcut indicators) */
+.cp-kbd {
+  color: var(--muted-fg) !important;
+  background: var(--muted) !important;
+  border-color: var(--border-color) !important;
+  font-family: inherit !important;
+}
