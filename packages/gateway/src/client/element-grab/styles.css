@@ -244,6 +244,50 @@
 .eg-menu-item:disabled { opacity: 0.4; cursor: default; }
 .eg-menu-item-shortcut { font-size: 11px; color: rgba(0,0,0,0.5); margin-left: 16px; }
 
+/* Toolbar pill */
+.eg-toolbar-pill {
+  position: fixed;
+  pointer-events: auto;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 40px;
+  height: 32px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15), 0 0 0 0.5px rgba(0,0,0,0.06);
+  transition: background 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  color: rgba(0,0,0,0.5);
+}
+.eg-toolbar-pill:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18), 0 0 0 0.5px rgba(0,0,0,0.08);
+  color: rgba(0,0,0,0.8);
+  transform: scale(1.05);
+}
+.eg-toolbar-pill:active { transform: scale(0.97); }
+.eg-toolbar-pill.active {
+  background: #6366f1;
+  color: white;
+  box-shadow: 0 2px 8px rgba(99,102,241,0.4), 0 0 0 0.5px rgba(99,102,241,0.3);
+}
+.eg-toolbar-pill.active:hover {
+  background: #5558e6;
+  box-shadow: 0 2px 12px rgba(99,102,241,0.5), 0 0 0 0.5px rgba(99,102,241,0.4);
+}
+.eg-toolbar-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: white;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
 .eg-menu-highlight {
   pointer-events: none;
   position: absolute;

@@ -110,8 +110,6 @@
     "@types/node": "^25.5.0",
     "@types/ws": "^8.18.1",
     "esbuild": "^0.25.0",
-    "esbuild-svelte": "^0.9.4",
-    "svelte": "^5.55.0",
     "typescript": "^5.8.0"
   }
 }

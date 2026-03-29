@@ -1,5 +1,4 @@
 import { build } from 'esbuild'
-import sveltePlugin from 'esbuild-svelte'
 
 // Build browser client (injected into pages)
 await build({
@@ -39,11 +38,11 @@ await build({
 })
 console.log('Element-source lib built → dist/libs/element-source.js')
 
-// Build element-grab overlay (Svelte UI)
+// Build element-grab overlay (vanilla TS, no framework)
 // Lazy-loaded by client.js, served at /__element-grab.js
 // element-source is externalized — loaded lazily from /__libs/element-source.js
 await build({
-  entryPoints: ['src/client/element-grab/index.svelte.ts'],
+  entryPoints: ['src/client/element-grab/index.ts'],
   bundle: true,
   format: 'iife',
   platform: 'browser',
@@ -51,11 +50,6 @@ await build({
   outfile: 'dist/element-grab-client.js',
   minify: true,
   external: ['element-source'],
-  plugins: [
-    sveltePlugin({
-      compilerOptions: { css: 'injected' },
-    }),
-  ],
   loader: { '.css': 'text' },
 })
 console.log('Element-grab built → dist/element-grab-client.js')
