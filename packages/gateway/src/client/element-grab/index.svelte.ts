@@ -12,6 +12,9 @@ import { ELEMENT_DETECTION_THROTTLE_MS, ACTIVATION_KEY, FROZEN_GLOW_COLOR, FROZE
 import { openFile } from './utils/open-file.js'
 import cssText from './styles.css'
 import SelectionLabel from './SelectionLabel.svelte'
+import ContextMenu from './ContextMenu.svelte'
+import { getHTMLPreview } from './context.js'
+import { createElementSelector } from './utils/css-selector.js'
 
 // --- State ---
 let active = false
@@ -33,6 +36,14 @@ let labelProps = $state({
   filePath: undefined as string | undefined,
   lineNumber: undefined as number | undefined,
   inputValue: '',
+})
+
+let menuProps = $state({
+  visible: false,
+  position: null as { x: number; y: number } | null,
+  selectionBounds: null as { x: number; y: number; width: number; height: number } | null,
+  tagName: '',
+  componentName: undefined as string | undefined,
 })
 
 let labelComponent: ReturnType<typeof mount> | null = null
@@ -83,6 +94,63 @@ const init = () => {
     boxShadow: `inset 0 0 ${FROZEN_GLOW_EDGE_PX}px ${FROZEN_GLOW_COLOR}`,
   })
   root.appendChild(frozenGlow)
+
+  // Mount ContextMenu into shadow DOM
+  const menuActions = [
+    {
+      label: 'Copy',
+      shortcut: '⌘C',
+      action: () => {
+        const card = (window as any).__LAST_GRABBED__?.card
+        if (card) navigator.clipboard.writeText(card).catch(() => {})
+      },
+    },
+    {
+      label: 'Copy HTML',
+      action: () => {
+        if (frozenEl) navigator.clipboard.writeText(frozenEl.outerHTML).catch(() => {})
+      },
+    },
+    {
+      label: 'Copy Styles',
+      action: () => {
+        if (!frozenEl) return
+        const cs = getComputedStyle(frozenEl)
+        const styles = Array.from(cs).filter(p => cs.getPropertyValue(p) !== '').map(p => `${p}: ${cs.getPropertyValue(p)};`).join('\n')
+        navigator.clipboard.writeText(styles).catch(() => {})
+      },
+    },
+    {
+      label: 'Open in editor',
+      shortcut: '⌘O',
+      action: () => handleOpenFile(),
+    },
+  ]
+
+  mount(ContextMenu, {
+    target: root,
+    props: {
+      get visible() { return menuProps.visible },
+      get position() { return menuProps.position },
+      get selectionBounds() { return menuProps.selectionBounds },
+      get tagName() { return menuProps.tagName },
+      get componentName() { return menuProps.componentName },
+      actions: menuActions,
+      ondismiss: () => { menuProps.visible = false },
+    },
+  })
+
+  // Right-click handler for context menu
+  document.addEventListener('contextmenu', (e: MouseEvent) => {
+    if (!frozenEl) return
+    e.preventDefault()
+    menuProps.visible = true
+    menuProps.position = { x: e.clientX, y: e.clientY }
+    const bounds = frozenEl.getBoundingClientRect()
+    menuProps.selectionBounds = { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
+    menuProps.tagName = labelProps.tagName
+    menuProps.componentName = labelProps.componentName
+  }, true)
 
   console.log('[element-grab] Ready — hold Cmd+C to activate')
 }
@@ -170,12 +238,15 @@ const handlePromptSubmit = async () => {
 
   labelProps.status = 'copying'
 
-  const ctx = getElementContext(frozenEl)
+  const ctx = await getElementContext(frozenEl)
   let card = formatContextCard(ctx)
 
-  // Append user prompt if provided
-  if (labelProps.inputValue.trim()) {
-    card += `\nprompt: ${labelProps.inputValue.trim()}`
+  // Read prompt from labelProps or directly from the textarea DOM
+  const promptText = labelProps.inputValue?.trim()
+    || root?.querySelector?.('textarea')?.value?.trim()
+    || ''
+  if (promptText) {
+    card += `\nprompt: ${promptText}`
   }
 
   // Update global
@@ -249,6 +320,7 @@ const deactivate = () => {
   }
   labelProps.visible = false
   labelProps.status = 'hovering'
+  menuProps.visible = false
   if (frozenGlow) frozenGlow.style.opacity = '0'
 }
 

@@ -1,21 +1,8 @@
 const ATTRIBUTE_NAME = 'data-element-grab'
-const FONT_LINK_ID = 'element-grab-fonts'
-const FONT_LINK_URL = 'https://fonts.googleapis.com/css2?family=Geist:wght@500&display=swap'
 const Z_INDEX_HOST = 2147483647
 const MOUNT_ROOT_RECHECK_DELAY_MS = 1000
 
-const loadFonts = () => {
-  if (document.getElementById(FONT_LINK_ID)) return
-  if (!document.head) return
-  const link = document.createElement('link')
-  link.id = FONT_LINK_ID
-  link.rel = 'stylesheet'
-  link.href = FONT_LINK_URL
-  document.head.appendChild(link)
-}
-
 export const mountRoot = (cssText?: string): HTMLDivElement => {
-  loadFonts()
 
   const existing = document.querySelector(`[${ATTRIBUTE_NAME}]`)
   if (existing) {

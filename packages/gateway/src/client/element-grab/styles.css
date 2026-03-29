@@ -82,7 +82,7 @@
 
 .eg-label {
   position: fixed;
-  font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 13px;
   font-weight: 500;
   -webkit-font-smoothing: antialiased;
