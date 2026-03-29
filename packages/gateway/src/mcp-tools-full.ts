@@ -63,11 +63,12 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
     'Truncates channel log files. Call before a fix iteration so subsequent reads only show new events.',
     { channels: z.array(z.string()).optional().describe("Channels to clear. Default: all.") },
     async (args) => {
+      const logPaths = getLogPaths(ctx)
       let channelsToClear = args.channels
       if (!channelsToClear || channelsToClear.length === 0 || channelsToClear.includes('all')) {
-        channelsToClear = ctx.session.channels
+        channelsToClear = Object.keys(logPaths)
       }
-      const countsBefore = truncateChannelFiles(ctx.session.files, channelsToClear)
+      const countsBefore = truncateChannelFiles(logPaths, channelsToClear)
       ctx.session.checkpointTs = Date.now()
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({

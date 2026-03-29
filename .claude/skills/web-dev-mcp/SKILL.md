@@ -9,19 +9,20 @@ Controls an already-open browser tab during development. MCP server at `/__mcp/s
 
 ## First call: set project context
 
-When multiple projects are registered, call `set_project` first with your working directory:
+**Always call `set_project` with your working directory as the first action:**
 
 ```
 set_project({ project: "/path/to/your/project" })
 ```
 
-Or use `list_projects` to discover available projects and their short IDs, then:
+This matches your cwd against registered projects (exact, parent, or child directory match). If only one project is registered, tools auto-resolve without this call.
+
+To discover available projects by short ID:
 
 ```
+list_projects → [{ id: "nextjs-turbopack-a3f7", ... }, ...]
 set_project({ project: "nextjs-turbopack-a3f7" })
 ```
-
-If only one project is registered, tools auto-resolve — no `set_project` needed.
 
 ## Core tools
 
