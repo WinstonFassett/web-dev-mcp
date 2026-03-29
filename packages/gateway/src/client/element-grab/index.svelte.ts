@@ -179,20 +179,66 @@ const getBounds = (el: Element): OverlayBounds => {
   }
 }
 
+// --- Element detection (filters our own UI, caches position) ---
+
+const isOwnElement = (el: Element): boolean => {
+  // Check if element is inside our Shadow DOM
+  const rootNode = el.getRootNode()
+  if (rootNode instanceof ShadowRoot && rootNode.host.hasAttribute('data-element-grab')) return true
+  // Check if element IS our host
+  if (el.hasAttribute?.('data-element-grab')) return true
+  return false
+}
+
+const isGrabbable = (el: Element): boolean => {
+  if (isOwnElement(el)) return false
+  // Skip root elements
+  if (el === document.body || el === document.documentElement) return false
+  // Skip full-viewport transparent overlays
+  const r = el.getBoundingClientRect()
+  if (r.width / window.innerWidth > 0.9 && r.height / window.innerHeight > 0.9) {
+    const cs = getComputedStyle(el)
+    if (cs.pointerEvents === 'none' || cs.backgroundColor === 'transparent' || cs.backgroundColor === 'rgba(0, 0, 0, 0)') return false
+  }
+  return true
+}
+
+const getElementAtPoint = (x: number, y: number): Element | null => {
+  const top = document.elementFromPoint(x, y)
+  if (top && isGrabbable(top)) return top
+  // Walk the stack if top element is our own UI
+  const stack = document.elementsFromPoint(x, y)
+  for (const el of stack) {
+    if (isGrabbable(el)) return el
+  }
+  return null
+}
+
+// --- Position cache (avoid jitter on sub-pixel mouse moves) ---
+
+let cachedEl: Element | null = null
+let cachedX = 0
+let cachedY = 0
+const CACHE_THRESHOLD = 2
+
 // --- Hover detection (throttled) ---
 
 let lastMoveTime = 0
-let lastMouseX = 0
 
 const onMouseMove = (e: MouseEvent) => {
   if (!active || frozenEl) return
   const now = Date.now()
   if (now - lastMoveTime < ELEMENT_DETECTION_THROTTLE_MS) return
   lastMoveTime = now
-  lastMouseX = e.clientX
 
-  const target = document.elementFromPoint(e.clientX, e.clientY)
-  if (!target || target === root || root?.contains(target)) return
+  // Use cached element if mouse barely moved
+  if (cachedEl && Math.abs(e.clientX - cachedX) < CACHE_THRESHOLD && Math.abs(e.clientY - cachedY) < CACHE_THRESHOLD) return
+  cachedX = e.clientX
+  cachedY = e.clientY
+
+  const target = getElementAtPoint(e.clientX, e.clientY)
+  if (!target) return
+  cachedEl = target
 
   hoveredEl = target
   const bounds = getBounds(target)
