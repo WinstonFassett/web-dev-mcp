@@ -24,13 +24,6 @@
     return () => window.removeEventListener('hashchange', onHashChange)
   })
 
-  // Default to gateway if no hash
-  $effect(() => {
-    if (!location.hash || location.hash === '#/' || location.hash === '#') {
-      location.hash = '#/gateway'
-    }
-  })
-
   // Track gateway connection status
   $effect(() => {
     return onConnectionChange((connected) => {
@@ -46,18 +39,32 @@
     return () => stopLogging()
   })
 
-  // Auto-select: if 1 project, 1 server, 1 browser → navigate there
+  // Auto-select: prefer deepest leaf available, gateway is last resort
   $effect(() => {
-    if (route.view !== 'gateway') return
-    if (registry.projects.length === 1) {
-      const proj = registry.projects[0]
-      if (proj.servers.length === 1 && proj.browsers.length === 1) {
-        const srv = proj.servers[0]
-        const br = proj.browsers[0]
-        navigate({ view: 'browser', projectId: proj.projectId, port: String(srv.port), browserId: br.browserId ?? br.connId })
-      } else if (proj.servers.length === 1) {
-        navigate({ view: 'project', projectId: proj.projectId })
+    // Only auto-select when on gateway or initial load
+    if (route.view !== 'gateway' && location.hash && location.hash !== '#/' && location.hash !== '#') return
+    if (registry.projects.length === 0) {
+      // No projects — fall back to gateway
+      if (!location.hash || location.hash === '#/' || location.hash === '#') {
+        location.hash = '#/gateway'
       }
+      return
+    }
+
+    // Pick first project (or only project)
+    const proj = registry.projects[0]
+    const srv = proj.servers[0]
+    if (!srv) {
+      navigate({ view: 'project', projectId: proj.projectId })
+      return
+    }
+
+    // If any browser exists, go to deepest leaf
+    if (proj.browsers.length > 0) {
+      const br = proj.browsers[0]
+      navigate({ view: 'browser', projectId: proj.projectId, port: String(srv.port), browserId: br.browserId ?? br.connId })
+    } else {
+      navigate({ view: 'project', projectId: proj.projectId })
     }
   })
 

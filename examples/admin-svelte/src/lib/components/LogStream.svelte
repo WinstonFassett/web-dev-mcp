@@ -17,16 +17,7 @@
     }
   })
 
-  // Channel tabs — only channels that carry distinct, non-redundant data
-  const CHANNELS = [
-    { id: 'all', label: 'All' },
-    { id: 'console', label: 'Console' },
-    { id: 'server-console', label: 'Server' },
-    { id: 'dev-events', label: 'Build' },
-  ]
-
   // Log levels in severity order (most severe first)
-  // Setting a level shows that level and everything above it
   const LEVELS = [
     { id: 'error', label: 'Error' },
     { id: 'warn', label: 'Warn' },
@@ -36,7 +27,6 @@
   ]
   const LEVEL_ORDER: Record<string, number> = { error: 0, warn: 1, info: 2, log: 3, debug: 4 }
 
-  let activeChannel: string = $state('all')
   let minLevel: string = $state('debug') // show everything by default
   let autoScroll: boolean = $state(true)
   let scrollContainer: HTMLDivElement | undefined = $state()
@@ -58,11 +48,6 @@
 
     // Exclude 'errors'/'error' channel — duplicates console errors
     result = result.filter(e => e.channel !== 'errors' && e.channel !== 'error')
-
-    // Channel filter
-    if (activeChannel !== 'all') {
-      result = result.filter(e => e.channel === activeChannel)
-    }
 
     // Level threshold filter
     if (minLevel !== 'debug') {
@@ -133,24 +118,8 @@
 </script>
 
 <div class="flex flex-col h-full overflow-hidden relative">
-  <!-- Channel tabs + severity toggles -->
-  <div class="flex items-center gap-1 px-3 py-1 border-b border-border shrink-0">
-    <!-- Channel tabs -->
-    <div class="flex items-center gap-0.5">
-      {#each CHANNELS as ch}
-        <button
-          onclick={() => activeChannel = ch.id}
-          class="px-2 py-0.5 rounded text-[11px] transition-colors
-            {activeChannel === ch.id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted'}"
-        >
-          {ch.label}
-        </button>
-      {/each}
-    </div>
-
-    <span class="w-px h-4 bg-border mx-1"></span>
-
-    <!-- Level threshold dropdown -->
+  <!-- Toolbar: level dropdown + count + clear -->
+  <div class="flex items-center gap-2 px-3 py-1 border-b border-border shrink-0">
     <select
       bind:value={minLevel}
       class="text-[11px] bg-transparent text-muted-foreground border border-border rounded px-1.5 py-0.5 cursor-pointer hover:text-foreground focus:outline-none focus:border-accent"
@@ -162,11 +131,10 @@
 
     <div class="flex-1"></div>
 
-    <!-- Count + clear -->
     <span class="text-[10px] text-muted-foreground/50">{filteredEntries.length}</span>
     <button
       onclick={() => clearEntries()}
-      class="text-[10px] text-muted-foreground hover:text-foreground transition-colors ml-1"
+      class="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
       title="Clear all logs"
     >
       Clear
