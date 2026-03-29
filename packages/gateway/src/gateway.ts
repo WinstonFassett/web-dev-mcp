@@ -241,6 +241,18 @@ export async function startGateway(options: GatewayOptions) {
       return
     }
 
+    // Browser init endpoint — returns serverId + gatewayUrl for runtime client config
+    if (url.startsWith('/__gateway/init') && req.method === 'GET') {
+      addCorsHeaders(res)
+      const urlObj = new URL(url, 'http://localhost')
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' })
+      res.end(JSON.stringify({
+        serverId: urlObj.searchParams.get('server') || null,
+        gatewayUrl: urlObj.searchParams.get('gateway') || serverUrl,
+      }))
+      return
+    }
+
     if (url === '/__gateway/servers' && req.method === 'GET') {
       addCorsHeaders(res)
       res.writeHead(200, { 'Content-Type': 'application/json' })
