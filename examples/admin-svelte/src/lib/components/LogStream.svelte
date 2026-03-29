@@ -115,6 +115,68 @@
     if (p.url) return `${p.method ?? 'GET'} ${p.url} ${p.status ?? ''}`
     return JSON.stringify(p)
   }
+
+  let exportOpen = $state(false)
+  let exportRef: HTMLDivElement | undefined = $state()
+
+  // Close export dropdown on outside click
+  $effect(() => {
+    if (!exportOpen) return
+    function onClick(e: MouseEvent) {
+      if (exportRef && !exportRef.contains(e.target as Node)) exportOpen = false
+    }
+    document.addEventListener('click', onClick, true)
+    return () => document.removeEventListener('click', onClick, true)
+  })
+
+  function entryLevel(entry: LogEntry): string {
+    const level = entry.payload?.level ?? ''
+    if (level === 'error' || entry.channel === 'errors') return 'error'
+    if (level === 'warn') return 'warn'
+    if (level === 'info') return 'info'
+    if (level === 'debug') return 'debug'
+    return 'log'
+  }
+
+  function download(filename: string, content: string, mime: string) {
+    const blob = new Blob([content], { type: mime })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    exportOpen = false
+  }
+
+  function exportJsonl() {
+    const lines = filteredEntries.map(e => JSON.stringify({
+      ts: new Date(e.timestamp).toISOString(),
+      level: entryLevel(e),
+      channel: e.channel,
+      message: entryMessage(e),
+      payload: e.payload,
+      browserId: e.browserId,
+      serverId: e.serverId,
+    }))
+    download('logs.jsonl', lines.join('\n') + '\n', 'application/x-ndjson')
+  }
+
+  function exportText() {
+    const lines = filteredEntries.map(e =>
+      `${formatTime(e.timestamp)}  ${entryLevel(e).padEnd(5)}  ${e.channel.padEnd(16)}  ${entryMessage(e)}`
+    )
+    download('logs.log', lines.join('\n') + '\n', 'text/plain')
+  }
+
+  function exportCsv() {
+    const esc = (s: string) => `"${s.replace(/"/g, '""')}"`
+    const header = 'timestamp,level,channel,message'
+    const rows = filteredEntries.map(e =>
+      `${new Date(e.timestamp).toISOString()},${entryLevel(e)},${esc(e.channel)},${esc(entryMessage(e))}`
+    )
+    download('logs.csv', header + '\n' + rows.join('\n') + '\n', 'text/csv')
+  }
 </script>
 
 <div class="flex flex-col h-full overflow-hidden relative">
@@ -132,6 +194,24 @@
     <div class="flex-1"></div>
 
     <span class="text-[10px] text-muted-foreground/50">{filteredEntries.length}</span>
+
+    <!-- Export dropdown -->
+    <div class="relative" bind:this={exportRef}>
+      <button
+        onclick={() => exportOpen = !exportOpen}
+        disabled={filteredEntries.length === 0}
+        class="text-[10px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30"
+        title="Export logs"
+      >Export</button>
+      {#if exportOpen}
+        <div class="absolute right-0 top-full mt-1 bg-card border border-border rounded shadow-lg z-10 py-1 min-w-24">
+          <button onclick={exportJsonl} class="block w-full text-left px-3 py-1 text-[11px] text-foreground hover:bg-muted/50">.jsonl</button>
+          <button onclick={exportText} class="block w-full text-left px-3 py-1 text-[11px] text-foreground hover:bg-muted/50">.log</button>
+          <button onclick={exportCsv} class="block w-full text-left px-3 py-1 text-[11px] text-foreground hover:bg-muted/50">.csv</button>
+        </div>
+      {/if}
+    </div>
+
     <button
       onclick={() => clearEntries()}
       class="text-[10px] text-muted-foreground hover:text-foreground transition-colors"

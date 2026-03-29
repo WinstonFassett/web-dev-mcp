@@ -5,6 +5,7 @@
   import { onConnectionChange } from './lib/data/gateway'
   import { startLogging, stopLogging } from './lib/data/logs.svelte'
   import SidebarTree from './lib/components/SidebarTree.svelte'
+  import ReplPanel from './lib/components/ReplPanel.svelte'
   import GatewayView from './routes/GatewayView.svelte'
   import ProjectView from './routes/ProjectView.svelte'
   import ServerView from './routes/ServerView.svelte'
@@ -14,6 +15,7 @@
   let route: Route = $state(parseHash(location.hash))
   let registry = getRegistry()
   let gwConnected = $state(false)
+  let replOpen = $state(false)
 
   // Listen for hash changes
   $effect(() => {
@@ -132,11 +134,8 @@
         {/if}
       </div>
 
-      <!-- REPL bar (collapsed) -->
-      <div class="h-7 border-t border-border flex items-center px-3 shrink-0 cursor-pointer hover:bg-muted/50 transition-colors">
-        <span class="text-[10px] text-muted-foreground">REPL</span>
-        <span class="text-[10px] text-muted-foreground/50 ml-2">Ctrl+`</span>
-      </div>
+      <!-- REPL panel -->
+      <ReplPanel {route} bind:open={replOpen} />
     </main>
   </div>
 
