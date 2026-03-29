@@ -13,16 +13,18 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 export interface ViteAdapterOptions {
   gateway?: string // Gateway URL, default: http://localhost:3333
+  serverType?: 'vite' | 'storybook' | 'generic' // Server type for gateway registration, default: 'vite'
 }
 
 function registerWithGateway(
   gatewayUrl: string,
   config: ResolvedConfig,
   serverId: string,
+  serverType: string = 'vite',
 ): Promise<{ serverId: string; logDir: string } | null> {
   const body = JSON.stringify({
     id: serverId,
-    type: 'vite',
+    type: serverType,
     port: config.server.port ?? 5173,
     pid: process.pid,
     directory: config.root,
@@ -154,7 +156,7 @@ export function webDevMcp(options: ViteAdapterOptions = {}): Plugin {
 
       async function tryRegister() {
         if (!resolvedConfig || registered) return
-        const result = await registerWithGateway(gatewayUrl, resolvedConfig, serverId!).catch(() => null)
+        const result = await registerWithGateway(gatewayUrl, resolvedConfig, serverId!, options.serverType ?? 'vite').catch(() => null)
         if (result) {
           registered = true
           if (retryTimer) { clearInterval(retryTimer); retryTimer = null }

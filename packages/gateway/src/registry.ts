@@ -22,7 +22,7 @@ export interface RegisteredServer {
   id: string              // PID string — ephemeral instance identity
   projectId: string       // Stable short ID: basename-hash4
   directory: string       // Absolute project path (persistent scope)
-  type: 'vite' | 'nextjs' | 'generic'
+  type: 'vite' | 'nextjs' | 'storybook' | 'generic'
   port: number
   pid: number
   name?: string           // Optional friendly name
