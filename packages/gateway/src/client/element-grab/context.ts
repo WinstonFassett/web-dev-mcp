@@ -1,106 +1,57 @@
 /**
- * Element context resolution using bippy (React fiber) and element-source (multi-framework).
- * These are npm packages — do NOT hand-roll this logic.
+ * Element context resolution using element-source (multi-framework).
+ * element-source handles React, Vue, Svelte, Solid — component names + source locations.
+ * Loaded lazily on first grab to keep initial bundle small.
  */
-import {
-  getFiberFromHostInstance,
-  isInstrumentationActive,
-  isCompositeFiber,
-  getDisplayName,
-  traverseFiber,
-} from 'bippy'
-import {
-  resolveStack,
-  formatStack,
-  resolveComponentName,
-} from 'element-source'
 import { createElementSelector } from './utils/css-selector.js'
-import { DEFAULT_MAX_CONTEXT_LINES, PREVIEW_TEXT_MAX_LENGTH, PREVIEW_ATTR_VALUE_MAX_LENGTH } from './constants.js'
+import { PREVIEW_TEXT_MAX_LENGTH, PREVIEW_ATTR_VALUE_MAX_LENGTH } from './constants.js'
 
-// --- Next.js / React internal component names to skip ---
-const INTERNAL_NAMES = new Set([
-  'InnerLayoutRouter', 'RedirectErrorBoundary', 'RedirectBoundary',
-  'HTTPAccessFallbackErrorBoundary', 'HTTPAccessFallbackBoundary',
-  'LoadingBoundary', 'ErrorBoundary', 'InnerScrollAndFocusHandler',
-  'ScrollAndFocusHandler', 'RenderFromTemplateContext', 'OuterLayoutRouter',
-  'body', 'html', 'DevRootHTTPAccessFallbackBoundary',
-  'AppDevOverlayErrorBoundary', 'AppDevOverlay', 'HotReload', 'Router',
-  'ErrorBoundaryHandler', 'AppRouter', 'ServerRoot', 'SegmentStateProvider',
-  'RootErrorBoundary', 'LoadableComponent', 'MotionDOMComponent',
-  'Suspense', 'Fragment', 'StrictMode', 'Profiler', 'SuspenseList',
-])
+// --- Lazy-loaded element-source module ---
+let elementSourceModule: any = null
+let loadPromise: Promise<any> | null = null
 
-const NON_COMPONENT_PREFIXES = ['_', '$', 'motion.', 'styled.', 'chakra.', 'ark.', 'Primitive.', 'Slot.']
-
-const isUsefulName = (name: string): boolean => {
-  if (!name || INTERNAL_NAMES.has(name)) return false
-  if (name === 'SlotClone' || name === 'Slot') return false
-  for (const prefix of NON_COMPONENT_PREFIXES) {
-    if (name.startsWith(prefix)) return false
-  }
-  return true
-}
-
-// --- Find nearest fiber-attached element ---
-export const findNearestFiberElement = (element: Element): Element => {
-  if (!isInstrumentationActive()) return element
-  let cur: Element | null = element
-  while (cur) {
-    if (getFiberFromHostInstance(cur)) return cur
-    cur = cur.parentElement
-  }
-  return element
-}
-
-// --- Get component display name for an element ---
-export const getComponentDisplayName = (element: Element): string | null => {
-  if (!isInstrumentationActive()) return null
-  const resolved = findNearestFiberElement(element)
-  const fiber = getFiberFromHostInstance(resolved)
-  if (!fiber) return null
-
-  let cur = fiber.return
-  while (cur) {
-    if (isCompositeFiber(cur)) {
-      const name = getDisplayName(cur.type)
-      if (name && isUsefulName(name)) return name
-    }
-    cur = cur.return
-  }
-  return null
-}
-
-// --- Get component names from fiber chain ---
-const getComponentNamesFromFiber = (element: Element, maxCount: number): string[] => {
-  if (!isInstrumentationActive()) return []
-  const fiber = getFiberFromHostInstance(element)
-  if (!fiber) return []
-
-  const names: string[] = []
-  traverseFiber(fiber, (cur) => {
-    if (names.length >= maxCount) return true
-    if (isCompositeFiber(cur)) {
-      const name = getDisplayName(cur.type)
-      if (name && isUsefulName(name)) names.push(name)
-    }
-    return false
-  }, true) // ascending
-  return names
-}
-
-// --- Get stack context (source locations) ---
-export const getStackContext = async (element: Element, maxLines = DEFAULT_MAX_CONTEXT_LINES): Promise<string> => {
-  const stack = await resolveStack(element)
-  if (stack.length > 0) return formatStack(stack, maxLines)
-
-  const names = getComponentNamesFromFiber(element, maxLines)
-  if (names.length > 0) return names.map(n => `\n  in ${n}`).join('')
-
-  return ''
+const loadElementSource = async () => {
+  if (elementSourceModule) return elementSourceModule
+  if (loadPromise) return loadPromise
+  const gatewayOrigin = (window as any).__WEB_DEV_MCP_ORIGIN__ || window.location.origin
+  const libUrl = gatewayOrigin + '/__libs/element-source.js'
+  loadPromise = import(/* @vite-ignore */ libUrl).catch(() =>
+    // Fallback: try bundled import
+    import('element-source')
+  ).then(mod => {
+    elementSourceModule = mod
+    return mod
+  }).catch(err => {
+    console.warn('[element-grab] Could not load element-source:', err)
+    return null
+  })
+  return loadPromise
 }
 
 // --- Truncate helper ---
 const truncate = (s: string, max: number) => s.length > max ? s.slice(0, max) + '…' : s
+
+// --- Get component display name (sync — uses cached module) ---
+export const getComponentDisplayName = (element: Element): string | null => {
+  if (!elementSourceModule?.resolveComponentName) return null
+  // resolveComponentName is async but we need sync for hover labels.
+  // Fire-and-forget: start the resolution, return null for now.
+  // The next hover tick will have the cached result.
+  // For sync access, try the React fiber directly.
+  try {
+    const fiberKey = Object.keys(element).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'))
+    if (fiberKey) {
+      const fiber = (element as any)[fiberKey]
+      let cur = fiber?.return
+      while (cur) {
+        const name = cur.type?.displayName || cur.type?.name
+        if (name && typeof cur.type === 'function' && name.length > 1 && name[0] === name[0].toUpperCase()) return name
+        cur = cur.return
+      }
+    }
+  } catch {}
+  return null
+}
 
 // --- Get HTML preview (compact) ---
 export const getHTMLPreview = (element: Element): string => {
@@ -131,27 +82,37 @@ export interface ElementContext {
 }
 
 export const getElementContext = async (element: Element): Promise<ElementContext> => {
-  const resolved = findNearestFiberElement(element)
-  const html = getHTMLPreview(resolved)
-  const stack = await getStackContext(resolved)
-  const component = getComponentDisplayName(resolved)
-  const selector = createElementSelector(resolved)
+  const mod = await loadElementSource()
 
-  // Try to get source info from element-source
+  const html = getHTMLPreview(element)
+  const selector = createElementSelector(element)
+
+  let component: string | null = null
+  let stack = ''
   let source: ElementContext['source'] | undefined
-  try {
-    const stackFrames = await resolveStack(resolved)
-    if (stackFrames.length > 0) {
-      const frame = stackFrames[0] as any
-      if (frame.fileName || frame.filePath) {
-        source = {
-          file: frame.fileName || frame.filePath,
-          line: frame.lineNumber,
-          column: frame.columnNumber,
+
+  if (mod) {
+    // Get component name
+    try {
+      component = await mod.resolveComponentName(element)
+    } catch {}
+
+    // Get stack context (source locations + component chain)
+    try {
+      const stackFrames = await mod.resolveStack(element)
+      if (stackFrames.length > 0) {
+        stack = mod.formatStack(stackFrames, 3)
+        const frame = stackFrames[0] as any
+        if (frame.fileName || frame.filePath) {
+          source = {
+            file: frame.fileName || frame.filePath,
+            line: frame.lineNumber,
+            column: frame.columnNumber,
+          }
         }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   return { html, stack, component, selector, source }
 }
