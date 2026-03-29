@@ -1,5 +1,7 @@
 # web-dev-mcp
 
+![Admin UI — live log stream](screenshots/admin-v1-logs-dark.png)
+
 Give AI agents live browser access during development. Console logs, DOM queries, screenshots, form filling, page navigation — via MCP tools or direct remote DOM access through [capnweb](https://blog.cloudflare.com/capnweb-javascript-rpc-library/).
 
 ```mermaid
