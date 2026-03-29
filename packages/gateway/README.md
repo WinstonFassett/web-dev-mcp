@@ -53,6 +53,43 @@ npm run dev
 
 The wrapper automatically injects browser instrumentation via webpack — no manual code changes required.
 
+## Storybook Integration
+
+For Storybook 8+ (Vite builder), use the preset addon:
+
+```bash
+npm install -D web-dev-mcp-gateway
+```
+
+```ts
+// .storybook/main.ts
+export default {
+  addons: ['web-dev-mcp-gateway/storybook'],
+  framework: '@storybook/react-vite',
+}
+```
+
+Start the gateway in one terminal:
+
+```bash
+npx web-dev-mcp-gateway
+```
+
+Then start Storybook:
+
+```bash
+npm run storybook
+```
+
+The addon injects browser instrumentation into the preview iframe via Vite's `viteFinal` hook. Story navigation is SPA-style, so capnweb RPC stays connected across story changes.
+
+Storybook story URLs follow a deterministic pattern:
+```
+http://localhost:6006/iframe.html?id={category}-{component}--{story}
+```
+
+For example: `?id=components-button--primary`, `?id=forms-input--with-validation`.
+
 ## How It Works
 
 ```
