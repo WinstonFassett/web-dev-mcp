@@ -13,11 +13,12 @@ import { openFile } from './utils/open-file.js'
 import cssText from './styles.css'
 import SelectionLabel from './SelectionLabel.svelte'
 import ContextMenu from './ContextMenu.svelte'
+import Toolbar from './Toolbar.svelte'
 import { getHTMLPreview } from './context.js'
 import { createElementSelector } from './utils/css-selector.js'
 
 // --- State ---
-let active = false
+let active = $state(false)
 let overlay: OverlayCanvas | null = null
 let hoveredEl: Element | null = null
 let frozenEl: Element | null = null
@@ -151,6 +152,18 @@ const init = () => {
     menuProps.tagName = labelProps.tagName
     menuProps.componentName = labelProps.componentName
   }, true)
+
+  // Mount Toolbar into shadow DOM
+  mount(Toolbar, {
+    target: root,
+    props: {
+      get isActive() { return active },
+      ontoggle: () => {
+        if (active) deactivate()
+        else activate()
+      },
+    },
+  })
 
   console.log('[element-grab] Ready — hold Cmd+C to activate')
 }
@@ -353,6 +366,9 @@ const onKeyUp = (e: KeyboardEvent) => {
 
 document.addEventListener('keydown', onKeyDown, true)
 document.addEventListener('keyup', onKeyUp, true)
+
+// Initialize immediately so toolbar is visible on page load
+init()
 
 // --- Expose API ---
 ;(window as any).__elementGrab = {
