@@ -1,0 +1,253 @@
+:host {
+  all: initial;
+  direction: ltr;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-3px); }
+  30% { transform: translateX(3px); }
+  45% { transform: translateX(-3px); }
+  60% { transform: translateX(3px); }
+  75% { transform: translateX(-2px); }
+  90% { transform: translateX(2px); }
+}
+
+@keyframes pop-in {
+  0% { opacity: 0; transform: scale(0.9); }
+  70% { opacity: 1; transform: scale(1.02); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pop-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.95); }
+}
+
+@keyframes slide-in-bottom {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-top {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes success-pop {
+  0% { transform: scale(0.9); opacity: 0; }
+  60% { transform: scale(1.1); opacity: 1; }
+  80% { transform: scale(0.95); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes icon-loader-spin {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 0.2; }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes tooltip-fade-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.icon-loader-bar {
+  animation: icon-loader-spin 0.5s linear infinite;
+}
+
+.shimmer-text {
+  background: linear-gradient(90deg, #71717a 0%, #a1a1aa 25%, #71717a 50%, #a1a1aa 75%, #71717a 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2.5s linear infinite;
+}
+
+.animate-shake { animation: shake 0.3s ease-out; will-change: transform; }
+.animate-pop-in { animation: pop-in 150ms ease-out; will-change: transform, opacity; }
+.animate-pop-out { animation: pop-out 150ms ease-out forwards; will-change: transform, opacity; }
+.animate-slide-in-bottom { animation: slide-in-bottom 200ms ease-out; will-change: transform, opacity; }
+.animate-slide-in-top { animation: slide-in-top 200ms ease-out; will-change: transform, opacity; }
+.animate-success-pop { animation: success-pop 250ms ease-out; will-change: transform, opacity; }
+.animate-tooltip-fade-in { animation: tooltip-fade-in 100ms ease-out; will-change: transform, opacity; }
+
+/* --- Base styles for element-grab UI --- */
+
+.eg-label {
+  position: fixed;
+  font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  filter: drop-shadow(0px 1px 2px #51515140);
+  user-select: none;
+  z-index: 2147483647;
+  transition: opacity 100ms ease-out;
+}
+
+.eg-panel {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: white;
+  border-radius: 10px;
+  padding: 0;
+  width: fit-content;
+  height: fit-content;
+  font-synthesis: none;
+  /* superellipse corners — degrades gracefully */
+  corner-shape: superellipse(1.25);
+}
+
+.eg-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 280px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.eg-tag-name {
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.eg-tag-component { color: black; }
+.eg-tag-suffix { color: rgba(0,0,0,0.5); }
+
+.eg-tag-open-icon {
+  color: black;
+  transition: all 100ms;
+  flex-shrink: 0;
+}
+
+.eg-tag-open-icon.visible { opacity: 1; transform: scale(1); }
+.eg-tag-open-icon.hidden { opacity: 0; transform: scale(0.75); margin-left: -2px; width: 0; }
+
+.eg-bottom-section {
+  font-synthesis: none;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 6px 8px;
+  width: auto;
+  height: fit-content;
+  align-self: stretch;
+  border-top: 0.5px solid #D9D9D9;
+  -webkit-font-smoothing: antialiased;
+  border-radius: 0 0 6px 6px;
+}
+
+.eg-arrow {
+  position: absolute;
+  width: 0;
+  height: 0;
+  z-index: 10;
+}
+
+/* Interactive utilities */
+.eg-interactive-scale {
+  transition: transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.eg-interactive-scale:hover { transform: scale(1.05); }
+.eg-interactive-scale:active { transform: scale(0.97); }
+
+.eg-press-scale {
+  transition: transform 100ms ease-out;
+}
+.eg-press-scale:active { transform: scale(0.97); }
+
+/* Prompt input */
+.eg-input {
+  color: black;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  flex: 1;
+  padding: 0;
+  margin: 0;
+  overflow-wrap: break-word;
+  overflow-y: auto;
+  field-sizing: content;
+  min-height: 16px;
+  scrollbar-width: none;
+}
+
+.eg-input::placeholder { color: rgba(0,0,0,0.4); }
+
+/* Submit/abort buttons */
+.eg-circle-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: black;
+  cursor: pointer;
+  margin-left: 4px;
+  border: none;
+  padding: 0;
+}
+
+/* Status text with shimmer */
+.eg-status {
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  height: fit-content;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Context menu */
+.eg-menu-item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 4px 8px;
+  cursor: pointer;
+  text-align: left;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  color: black;
+}
+
+.eg-menu-item:disabled { opacity: 0.4; cursor: default; }
+.eg-menu-item-shortcut { font-size: 11px; color: rgba(0,0,0,0.5); margin-left: 16px; }
+
+.eg-menu-highlight {
+  pointer-events: none;
+  position: absolute;
+  background: rgba(0,0,0,0.05);
+  opacity: 0;
+  transition: top 75ms ease-out, left 75ms ease-out, width 75ms ease-out, height 75ms ease-out, opacity 75ms ease-out;
+}
