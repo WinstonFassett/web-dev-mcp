@@ -54,7 +54,7 @@
       if (proj.servers.length === 1 && proj.browsers.length === 1) {
         const srv = proj.servers[0]
         const br = proj.browsers[0]
-        navigate({ view: 'browser', projectId: proj.projectId, port: String(srv.port), browserId: br.connId })
+        navigate({ view: 'browser', projectId: proj.projectId, port: String(srv.port), browserId: br.browserId ?? br.connId })
       } else if (proj.servers.length === 1) {
         navigate({ view: 'project', projectId: proj.projectId })
       }

@@ -77,9 +77,9 @@
         <!-- Browsers under single-server project -->
         {#each browsers as browser}
           <button
-            onclick={() => navigatePath(`#/project/${project.projectId}/${server.port}/${browser.connId}`)}
+            onclick={() => navigatePath(`#/project/${project.projectId}/${server.port}/${browser.browserId ?? browser.connId}`)}
             class="w-full text-left pl-5 pr-2 py-0.5 rounded hover:bg-muted transition-colors truncate text-[11px]
-              {isActive('browser', project.projectId, String(server.port), browser.connId) ? 'bg-muted text-foreground font-medium' : 'text-muted-foreground/70'}"
+              {isActive('browser', project.projectId, String(server.port), browser.browserId ?? browser.connId) ? 'bg-muted text-foreground font-medium' : 'text-muted-foreground/70'}"
           >
             {browserLabel(browser)}
           </button>
@@ -115,9 +115,9 @@
 
             {#each srvBrowsers as browser}
               <button
-                onclick={() => navigatePath(`#/project/${project.projectId}/${srv.port}/${browser.connId}`)}
+                onclick={() => navigatePath(`#/project/${project.projectId}/${srv.port}/${browser.browserId ?? browser.connId}`)}
                 class="w-full text-left pl-7 pr-2 py-0.5 rounded hover:bg-muted transition-colors truncate text-[11px]
-                  {isActive('browser', project.projectId, String(srv.port), browser.connId) ? 'bg-muted text-foreground font-medium' : 'text-muted-foreground/70'}"
+                  {isActive('browser', project.projectId, String(srv.port), browser.browserId ?? browser.connId) ? 'bg-muted text-foreground font-medium' : 'text-muted-foreground/70'}"
               >
                 {browserLabel(browser)}
               </button>
