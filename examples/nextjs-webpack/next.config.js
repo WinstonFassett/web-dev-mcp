@@ -1,4 +1,4 @@
-import { withWebDevMcp } from 'web-dev-mcp-gateway/nextjs'
+import { withWebDevMcp } from '@winstonfassett/web-dev-mcp-nextjs'
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {}

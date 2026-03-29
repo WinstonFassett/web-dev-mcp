@@ -1,4 +1,4 @@
-import { WebDevMcpInit } from './WebDevMcpInit'
+import { WebDevMcpInit } from '@winstonfassett/web-dev-mcp-nextjs/init'
 
 export const metadata = {
   title: 'Next.js MCP Test App (turbopack)',

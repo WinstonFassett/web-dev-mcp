@@ -3,15 +3,18 @@
   "version": "0.1.0",
   "description": "Monorepo for web development MCP tools",
   "type": "module",
+  "private": true,
   "workspaces": [
     "packages/*",
     "examples/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace=vite-live-dev-mcp && npm run build --workspace=web-dev-mcp-gateway",
+    "build": "npm run build -w @winstonfassett/web-dev-mcp-gateway && npm run build -w @winstonfassett/web-dev-mcp-vite && npm run build -w @winstonfassett/web-dev-mcp-nextjs",
     "dev": "npm run dev --workspaces",
     "test": "npm run test --workspaces",
-    "clean": "npm run clean --workspaces && rm -rf node_modules"
+    "clean": "npm run clean --workspaces && rm -rf node_modules",
+    "prepublish:check": "npm run build && npm pack --dry-run -w @winstonfassett/web-dev-mcp-gateway && npm pack --dry-run -w @winstonfassett/web-dev-mcp-vite && npm pack --dry-run -w @winstonfassett/web-dev-mcp-nextjs",
+    "publish:all": "npm publish -w @winstonfassett/web-dev-mcp-gateway && npm publish -w @winstonfassett/web-dev-mcp-vite && npm publish -w @winstonfassett/web-dev-mcp-nextjs"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

@@ -12,7 +12,8 @@
     "next": "^16.2.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "web-dev-mcp-gateway": "file:../../packages/gateway"
+    "@winstonfassett/web-dev-mcp-gateway": "file:../../packages/gateway",
+    "@winstonfassett/web-dev-mcp-nextjs": "file:../../packages/adapter-nextjs"
   },
   "devDependencies": {
     "@types/node": "^22",

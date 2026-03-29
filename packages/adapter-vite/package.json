@@ -1,0 +1,70 @@
+{
+  "name": "@winstonfassett/web-dev-mcp-vite",
+  "version": "0.1.0",
+  "description": "Vite plugin for web-dev-mcp — live browser observability for AI agents",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./storybook": {
+      "types": "./dist/storybook/preset.d.ts",
+      "import": "./dist/storybook/preset.js",
+      "require": "./dist/storybook/preset.cjs",
+      "default": "./dist/storybook/preset.js"
+    },
+    "./storybook/preset": {
+      "types": "./dist/storybook/preset.d.ts",
+      "import": "./dist/storybook/preset.js",
+      "require": "./dist/storybook/preset.cjs",
+      "default": "./dist/storybook/preset.cjs"
+    },
+    "./storybook/preview": {
+      "types": "./dist/storybook/preview.d.ts",
+      "import": "./dist/storybook/preview.js",
+      "require": "./dist/storybook/preview.cjs",
+      "default": "./dist/storybook/preview.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": [
+    "vite",
+    "mcp",
+    "ai",
+    "devtools",
+    "web-dev-mcp"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WinstonFassett/web-dev-mcp.git",
+    "directory": "packages/adapter-vite"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@winstonfassett/web-dev-mcp-gateway": "^0.1.0",
+    "vite": ">=6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@winstonfassett/web-dev-mcp-gateway": "file:../gateway",
+    "@types/node": "^25.5.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.8.0",
+    "vite": "^8.0.0"
+  }
+}

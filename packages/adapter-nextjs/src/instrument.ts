@@ -1,15 +1,10 @@
 /**
- * Browser instrumentation for Next.js apps
- * Loads the gateway's client.js which handles everything:
- * console patching, error handlers, network interception, capnweb RPC
+ * Browser instrumentation for Next.js apps (webpack mode).
+ * Loaded automatically via webpack entry injection from withWebDevMcp().
  *
- * Loaded automatically via webpack entry injection from withWebDevMcp(),
- * or manually: import 'web-dev-mcp-gateway/nextjs/instrument'
- *
- * Server ID + gateway URL come from next.config.env (works with webpack + Turbopack)
+ * For Turbopack, use <WebDevMcpInit /> from '@winstonfassett/web-dev-mcp-nextjs/init' instead.
  */
 if (typeof window !== 'undefined' && !(window as any).__WEB_DEV_MCP_LOADED__) {
-  // next.config.env inlines these via static replacement (NEXT_PUBLIC_ prefix required)
   if (process.env.NEXT_PUBLIC_WEB_DEV_MCP_SERVER) {
     (window as any).__WEB_DEV_MCP_SERVER__ = process.env.NEXT_PUBLIC_WEB_DEV_MCP_SERVER
   }

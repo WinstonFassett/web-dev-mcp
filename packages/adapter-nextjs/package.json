@@ -1,0 +1,60 @@
+{
+  "name": "@winstonfassett/web-dev-mcp-nextjs",
+  "version": "0.1.0",
+  "description": "Next.js adapter for web-dev-mcp — live browser observability for AI agents",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./init": {
+      "types": "./dist/init.d.ts",
+      "import": "./dist/init.js"
+    },
+    "./instrument": {
+      "types": "./dist/instrument.d.ts",
+      "import": "./dist/instrument.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": [
+    "nextjs",
+    "mcp",
+    "ai",
+    "devtools",
+    "web-dev-mcp"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WinstonFassett/web-dev-mcp.git",
+    "directory": "packages/adapter-nextjs"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@winstonfassett/web-dev-mcp-gateway": "^0.1.0",
+    "next": ">=15.0.0"
+  },
+  "peerDependenciesMeta": {
+    "next": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "@winstonfassett/web-dev-mcp-gateway": "file:../gateway",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.0.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.8.0"
+  }
+}

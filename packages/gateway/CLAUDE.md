@@ -1,6 +1,8 @@
-# web-dev-mcp-gateway
+# @winstonfassett/web-dev-mcp-gateway
 
 Universal gateway — proxy, MCP server, capnweb routing between agents and browsers.
+Framework adapters are in separate packages (`adapter-vite`, `adapter-nextjs`).
+Shared adapter helpers exported at `./helpers` subpath.
 
 ## Build
 

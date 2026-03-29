@@ -4,7 +4,7 @@ const config: StorybookConfig = {
   stories: ['../src/**/*.stories.@(ts|tsx)'],
   addons: [
     '@storybook/addon-essentials',
-    'web-dev-mcp-gateway/storybook',
+    '@winstonfassett/web-dev-mcp-vite/storybook',
   ],
   framework: '@storybook/react-vite',
 }

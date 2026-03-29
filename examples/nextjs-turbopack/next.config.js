@@ -1,10 +1,9 @@
-import { withWebDevMcp } from 'web-dev-mcp-gateway/nextjs'
+import { withWebDevMcp } from '@winstonfassett/web-dev-mcp-nextjs'
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   turbopack: {},  // silence warning about webpack config from withWebDevMcp
 }
 
-// withWebDevMcp adds rewrites for /__mcp, /__rpc, /__events, /__client.js → gateway
-// Turbopack: client injection is via WebDevMcpInit component in layout.tsx
+// Turbopack: also add <WebDevMcpInit /> from '@winstonfassett/web-dev-mcp-nextjs/init' in layout.tsx
 export default withWebDevMcp(nextConfig)

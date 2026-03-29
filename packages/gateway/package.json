@@ -1,5 +1,5 @@
 {
-  "name": "web-dev-mcp-gateway",
+  "name": "@winstonfassett/web-dev-mcp-gateway",
   "version": "0.1.0",
   "description": "Universal web development MCP gateway — proxy any dev server with live browser observability for AI agents",
   "type": "module",
@@ -14,50 +14,22 @@
       "import": "./dist/gateway.js",
       "default": "./dist/gateway.js"
     },
-    "./vite": {
-      "types": "./dist/adapters/vite.d.ts",
-      "import": "./dist/adapters/vite.js",
-      "default": "./dist/adapters/vite.js"
-    },
-    "./nextjs": {
-      "types": "./dist/nextjs/index.d.ts",
-      "import": "./dist/nextjs/index.js",
-      "default": "./dist/nextjs/index.js"
-    },
-    "./nextjs/instrument": {
-      "types": "./dist/nextjs/instrument.d.ts",
-      "import": "./dist/nextjs/instrument.js",
-      "default": "./dist/nextjs/instrument.js"
+    "./helpers": {
+      "types": "./dist/adapter-helpers.d.ts",
+      "import": "./dist/adapter-helpers.js",
+      "default": "./dist/adapter-helpers.js"
     },
     "./agent": {
       "types": "./dist/agent-client.d.ts",
       "import": "./dist/agent-client.js",
       "default": "./dist/agent-client.js"
-    },
-    "./storybook": {
-      "types": "./dist/storybook/preset.d.ts",
-      "import": "./dist/storybook/preset.js",
-      "require": "./dist/storybook/preset.cjs",
-      "default": "./dist/storybook/preset.js"
-    },
-    "./storybook/preset": {
-      "types": "./dist/storybook/preset.d.ts",
-      "import": "./dist/storybook/preset.js",
-      "require": "./dist/storybook/preset.cjs",
-      "default": "./dist/storybook/preset.cjs"
-    },
-    "./storybook/preview": {
-      "types": "./dist/storybook/preview.d.ts",
-      "import": "./dist/storybook/preview.js",
-      "require": "./dist/storybook/preview.cjs",
-      "default": "./dist/storybook/preview.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc && node build-client.mjs && cp src/storybook/*.cjs dist/storybook/ 2>/dev/null || true",
+    "build": "tsc && node build-client.mjs",
     "build:client": "node build-client.mjs",
     "dev": "tsc --watch",
     "test": "node dist/cli.js"
@@ -75,6 +47,9 @@
     "directory": "packages/gateway"
   },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.0",
     "capnweb": "^0.6.1",
@@ -82,26 +57,6 @@
     "modern-screenshot": "^4.6.8",
     "ws": "^8.20.0",
     "zod": "^4.0.0"
-  },
-  "peerDependencies": {
-    "next": ">=15.0.0",
-    "storybook": ">=8.0.0",
-    "vite": ">=6.0.0",
-    "webpack": ">=5.0.0"
-  },
-  "peerDependenciesMeta": {
-    "next": {
-      "optional": true
-    },
-    "storybook": {
-      "optional": true
-    },
-    "vite": {
-      "optional": true
-    },
-    "webpack": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
