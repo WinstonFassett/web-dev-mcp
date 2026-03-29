@@ -29,7 +29,7 @@ console.log('Screenshot lib built → dist/libs/modern-screenshot.js')
 // Build element-grab overlay (Svelte + bippy + element-source)
 // Lazy-loaded by client.js, served at /__element-grab.js
 await build({
-  entryPoints: ['src/client/element-grab/index.ts'],
+  entryPoints: ['src/client/element-grab/index.svelte.ts'],
   bundle: true,
   format: 'iife',
   platform: 'browser',

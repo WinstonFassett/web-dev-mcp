@@ -6,6 +6,7 @@ import type { DevEventsWriter } from './writers/dev-events.js'
 import type { ServerRegistry } from './registry.js'
 import { registerCoreTools, sessionStates } from './mcp-tools-core.js'
 import { registerFullTools } from './mcp-tools-full.js'
+import { registerElementGrabTool } from './element-grab.js'
 
 export interface McpContext {
   session: SessionState
@@ -25,6 +26,7 @@ function createMcpServerInstance(ctx: McpContext, toolset: Toolset = 'core'): Mc
   )
 
   registerCoreTools(mcp, ctx)
+  registerElementGrabTool(mcp)
 
   if (toolset === 'full') {
     registerFullTools(mcp, ctx)

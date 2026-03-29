@@ -702,4 +702,17 @@
   })
 
   originalConsole.log('[web-dev-mcp] Client loaded')
+
+  // Load element-grab overlay (lazy, on idle)
+  const loadElementGrab = () => {
+    const script = document.createElement('script')
+    script.src = gatewayOrigin + '/__element-grab.js'
+    script.async = true
+    document.head.appendChild(script)
+  }
+  if ('requestIdleCallback' in window) {
+    (window as any).requestIdleCallback(loadElementGrab)
+  } else {
+    setTimeout(loadElementGrab, 1000)
+  }
 })()

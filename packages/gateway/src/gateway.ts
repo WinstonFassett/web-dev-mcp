@@ -19,6 +19,7 @@ import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi, onBrowserEvent, 
 import { handleAdmin } from './admin.js'
 import { autoRegister } from './auto-register.js'
 import { ServerRegistry, type RegisteredServer, makeServerId, makeProjectId, initProjectLogDir } from './registry.js'
+import { handleElementGrabRequest } from './element-grab.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -176,6 +177,24 @@ export async function startGateway(options: GatewayOptions) {
         res.end('Not found')
       }
       return
+    }
+
+    // Element-grab: serve script + HTTP selection endpoints
+    if (url === '/__element-grab.js') {
+      addCorsHeaders(res)
+      try {
+        const script = readFileSync(join(__dirname, 'element-grab-client.js'), 'utf-8')
+        res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' })
+        res.end(script)
+      } catch {
+        res.writeHead(404)
+        res.end('element-grab not built')
+      }
+      return
+    }
+    if (url.startsWith('/__element-grab/')) {
+      addCorsHeaders(res)
+      if (handleElementGrabRequest(req, res, url)) return
     }
 
     // Gateway registration endpoints
