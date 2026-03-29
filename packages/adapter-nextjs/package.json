@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Next.js adapter for web-dev-mcp — live browser observability for AI agents",
   "type": "module",
+  "engines": { "node": ">=20.6.0" },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

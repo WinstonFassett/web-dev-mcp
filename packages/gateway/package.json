@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Universal web development MCP gateway — proxy any dev server with live browser observability for AI agents",
   "type": "module",
+  "engines": { "node": ">=20.6.0" },
   "main": "dist/gateway.js",
   "types": "dist/gateway.d.ts",
   "bin": {
