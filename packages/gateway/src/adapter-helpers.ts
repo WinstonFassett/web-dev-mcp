@@ -7,9 +7,10 @@
 
 import { spawn } from 'node:child_process'
 import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 
 // Guard: true while our own code is logging (prevents infinite recursion)
 let _internalLogging = false
@@ -209,16 +210,11 @@ function pidFilePath(gatewayUrl: string): string {
 
 async function isGatewayRunning(gatewayUrl: string): Promise<boolean> {
   try {
-    const res = await fetch(`${gatewayUrl}/__gateway/status`, { signal: AbortSignal.timeout(2000) })
-    return res.ok
-  } catch {
-    // Fallback: try the register endpoint with a dummy HEAD-like check
-    try {
-      const res = await fetch(gatewayUrl, { signal: AbortSignal.timeout(2000) })
-      return res.ok || res.status === 404 // server is up if it responds at all
-    } catch {
-      return false
-    }
+    await fetch(gatewayUrl, { signal: AbortSignal.timeout(2000) })
+    // Any response (even 404) means the server is up
+    return true
+  } catch (e: any) {
+    return false
   }
 }
 
@@ -232,37 +228,49 @@ export async function ensureGateway(gatewayUrl: string): Promise<void> {
   const url = new URL(gatewayUrl)
   const port = url.port || '3333'
 
+  const startTime = Date.now()
   _internalLogging = true
   console.log(`  [web-dev-mcp] Starting gateway on port ${port}...`)
   _internalLogging = false
 
-  // Spawn the gateway CLI as a detached process
-  const child = spawn('npx', ['web-dev-mcp', '--port', port], {
+  // Resolve the CLI bin directly — avoids npx overhead (15-30s → ~1-2s)
+  let cliBin: string
+  try {
+    // import.meta.resolve gives us the package entry; the CLI is at dist/cli.js
+    const pkgDir = dirname(fileURLToPath(import.meta.resolve('@winstonfassett/web-dev-mcp-gateway/package.json')))
+    cliBin = join(pkgDir, 'dist', 'cli.js')
+  } catch {
+    // Fallback: resolve relative to this file (we're inside the gateway package)
+    cliBin = join(dirname(fileURLToPath(import.meta.url)), 'cli.js')
+  }
+
+  const child = spawn('node', [cliBin, '--port', port], {
     detached: true,
     stdio: 'ignore',
     env: { ...process.env },
   })
   child.unref()
 
-  // Write PID for stop/restart
+  // Write PID for stop/restart — this is the real node process PID (not an npx wrapper)
   if (child.pid) {
     try {
       writeFileSync(pidFilePath(gatewayUrl), String(child.pid))
     } catch {}
   }
 
-  // Wait for gateway to become reachable (up to 30s — npx cold start can be slow)
-  for (let i = 0; i < 60; i++) {
-    await new Promise(r => setTimeout(r, 500))
+  // Wait for gateway to become reachable (up to 10s with fast polling)
+  for (let i = 0; i < 40; i++) {
+    await new Promise(r => setTimeout(r, i < 10 ? 250 : 500))
     if (await isGatewayRunning(gatewayUrl)) {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
       _internalLogging = true
-      console.log(`  [web-dev-mcp] Gateway started (pid: ${child.pid})`)
+      console.log(`  [web-dev-mcp] Gateway started in ${elapsed}s (pid: ${child.pid})`)
       _internalLogging = false
       return
     }
   }
 
-  console.warn(`  [web-dev-mcp] Gateway did not start within 30s — continuing without it`)
+  console.warn(`  [web-dev-mcp] Gateway did not start within 20s — continuing without it`)
 }
 
 /**

@@ -23,7 +23,8 @@
       "types": "./dist/agent-client.d.ts",
       "import": "./dist/agent-client.js",
       "default": "./dist/agent-client.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"
