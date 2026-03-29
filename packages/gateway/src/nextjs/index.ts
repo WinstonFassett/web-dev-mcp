@@ -193,6 +193,13 @@ export function withWebDevMcp(
   return {
     ...nextConfig,
 
+    // Expose env vars to browser — works with both webpack and Turbopack
+    env: {
+      ...nextConfig.env,
+      NEXT_PUBLIC_WEB_DEV_MCP_GATEWAY: gatewayUrl,
+      NEXT_PUBLIC_WEB_DEV_MCP_SERVER: serverId,
+    },
+
     webpack(config: any, webpackOptions: any) {
       const { dev, isServer } = webpackOptions
 
