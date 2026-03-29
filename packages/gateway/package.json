@@ -90,9 +90,6 @@
     "webpack": ">=5.0.0"
   },
   "peerDependenciesMeta": {
-    "bippy": {
-      "optional": true
-    },
     "next": {
       "optional": true
     },
