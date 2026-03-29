@@ -16,6 +16,9 @@ export interface GatewayStub {
   listProjects(): Promise<string[]>
   getProject(serverId?: string): any
   subscribeEvents(browserId?: string): Promise<ReadableStream>
+  getProjectLogs(serverId: string, options?: { limit?: number; sinceId?: number; channels?: string[] }): Promise<{
+    entries: Array<{ channel: string; id: number; ts: number; payload: any; browserId?: string }>
+  }>
 }
 
 export interface GatewayConnection {

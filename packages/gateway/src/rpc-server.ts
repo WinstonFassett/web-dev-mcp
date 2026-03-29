@@ -1,5 +1,7 @@
 import { RpcSession, RpcTarget, type RpcTransport, type RpcStub } from 'capnweb'
 import { WebSocketServer, type WebSocket as WsWebSocket } from 'ws'
+import type { ServerRegistry } from './registry.js'
+import { queryLogs } from './log-reader.js'
 
 function createWsTransport(ws: WsWebSocket): RpcTransport {
   const messageQueue: string[] = []
@@ -235,6 +237,13 @@ export class ProjectBrowserApi extends RpcTarget {
 // --- Gateway API (gateway-level operations) ---
 
 export class GatewayApi extends RpcTarget {
+  private registry?: ServerRegistry
+
+  constructor(registry?: ServerRegistry) {
+    super()
+    this.registry = registry
+  }
+
   getBrowserCount() {
     return browsers.size
   }
@@ -254,6 +263,39 @@ export class GatewayApi extends RpcTarget {
   /** Get a project-scoped browser handle */
   getProject(serverId?: string): ProjectBrowserApi {
     return new ProjectBrowserApi(serverId)
+  }
+
+  /** Read historical logs for a project from NDJSON files */
+  getProjectLogs(serverId: string, options?: { limit?: number; sinceId?: number; channels?: string[] }) {
+    if (!this.registry) return { entries: [] }
+    const server = this.registry.get(serverId)
+    if (!server) return { entries: [] }
+
+    const limit = Math.min(options?.limit ?? 200, 1000)
+    const sinceId = options?.sinceId ?? 0
+    const channels = options?.channels ?? ['console', 'server-console', 'dev-events']
+
+    const entries: Array<{ channel: string; id: number; ts: number; payload: any; browserId?: string }> = []
+    for (const channel of channels) {
+      const result = queryLogs(server.logPaths, { channel, sinceId, limit })
+      for (const event of result.events) {
+        entries.push({
+          channel,
+          id: event.id,
+          ts: event.ts,
+          payload: event.payload,
+          browserId: (event.payload as any)?.browserId,
+        })
+      }
+    }
+
+    // Sort by timestamp
+    entries.sort((a, b) => a.ts - b.ts)
+
+    // Trim to limit
+    if (entries.length > limit) entries.length = limit
+
+    return { entries }
   }
 
   subscribeEvents(browserId?: string) {
@@ -278,7 +320,7 @@ export class GatewayApi extends RpcTarget {
   }
 }
 
-export function setupAgentRpcWebSocket(httpServer: { on(event: string, listener: (...args: any[]) => void): void }, agentPath: string) {
+export function setupAgentRpcWebSocket(httpServer: { on(event: string, listener: (...args: any[]) => void): void }, agentPath: string, registry?: ServerRegistry) {
   const wss = new WebSocketServer({ noServer: true })
 
   httpServer.on('upgrade', (request: any, socket: any, head: any) => {
@@ -293,7 +335,7 @@ export function setupAgentRpcWebSocket(httpServer: { on(event: string, listener:
   wss.on('connection', (ws) => {
     const connId = Math.random().toString(36).slice(2)
     const transport = createWsTransport(ws)
-    const api = new GatewayApi()
+    const api = new GatewayApi(registry)
     const session = new RpcSession(transport, api)
 
     console.log(`[web-dev-mcp] Agent connected (${connId})`)

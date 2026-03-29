@@ -1,12 +1,21 @@
 <script lang="ts">
-  import { getLogEntries, clearEntries, type LogEntry } from '../data/logs.svelte'
+  import { getLogEntries, clearEntries, loadProjectHistory, type LogEntry } from '../data/logs.svelte'
 
   interface LogFilter {
     browserId?: string
     serverId?: string
   }
 
-  let { filter = {} }: { filter?: LogFilter } = $props()
+  let { filter = {}, historyServerId }: { filter?: LogFilter; historyServerId?: string } = $props()
+
+  // Load history from NDJSON files when a serverId is provided
+  let _historyLoaded: string | undefined = $state()
+  $effect(() => {
+    if (historyServerId && historyServerId !== _historyLoaded) {
+      _historyLoaded = historyServerId
+      loadProjectHistory(historyServerId)
+    }
+  })
 
   // Channel tabs — only channels that carry distinct, non-redundant data
   const CHANNELS = [

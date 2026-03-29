@@ -90,6 +90,32 @@ export async function startLogging() {
   }
 }
 
+/** Load historical logs for a project from NDJSON files */
+export async function loadProjectHistory(serverId: string) {
+  try {
+    const gw = await getGateway()
+    const result = await gw.stub.getProjectLogs(serverId, { limit: 200 })
+    if (result?.entries?.length) {
+      // Prepend history before any live entries, avoiding duplicates by timestamp
+      const existingTs = new Set(_entries.map(e => e.timestamp))
+      for (const e of result.entries) {
+        if (existingTs.has(e.ts)) continue
+        _entries.push({
+          type: 'log',
+          channel: e.channel,
+          payload: e.payload,
+          browserId: e.browserId,
+          timestamp: e.ts,
+        })
+      }
+      // Sort by timestamp so history appears in order before live
+      _entries.sort((a, b) => a.timestamp - b.timestamp)
+    }
+  } catch {
+    // History is best-effort — don't break the UI
+  }
+}
+
 /** Stop streaming — currently only via page unload */
 export function stopLogging() {
   // No-op for now; stream ends when WS closes

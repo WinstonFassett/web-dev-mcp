@@ -324,7 +324,7 @@ export async function startGateway(options: GatewayOptions) {
 
     // capnweb HTTP batch endpoint — stateless per request
     if (url === '/__rpc/batch') {
-      nodeHttpBatchRpcResponse(req, res, new GatewayApi(), {
+      nodeHttpBatchRpcResponse(req, res, new GatewayApi(registry), {
         headers: { 'Access-Control-Allow-Origin': '*' },
       }).catch((err: any) => {
         if (!res.headersSent) {
@@ -394,7 +394,7 @@ export async function startGateway(options: GatewayOptions) {
 
   // Setup RPC WebSocket (capnweb for eval/queryDom)
   setupRpcWebSocket(server, '/__rpc')
-  setupAgentRpcWebSocket(server, '/__rpc/agent')
+  setupAgentRpcWebSocket(server, '/__rpc/agent', registry)
 
   // Broadcast browser connect/disconnect to admin SSE
   onBrowserEvent((event, data) => {
