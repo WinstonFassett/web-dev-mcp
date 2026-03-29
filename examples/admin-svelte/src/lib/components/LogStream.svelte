@@ -8,27 +8,27 @@
 
   let { filter = {} }: { filter?: LogFilter } = $props()
 
-  // Channel tabs
+  // Channel tabs — only channels that carry distinct, non-redundant data
   const CHANNELS = [
     { id: 'all', label: 'All' },
     { id: 'console', label: 'Console' },
-    { id: 'errors', label: 'Errors' },
-    { id: 'network', label: 'Network' },
     { id: 'server-console', label: 'Server' },
     { id: 'dev-events', label: 'Build' },
   ]
 
-  // Severity levels
+  // Log levels in severity order (most severe first)
+  // Setting a level shows that level and everything above it
   const LEVELS = [
-    { id: 'error', label: 'E', color: 'text-destructive' },
-    { id: 'warn', label: 'W', color: 'text-warning' },
-    { id: 'info', label: 'I', color: 'text-info' },
-    { id: 'log', label: 'L', color: 'text-muted-foreground' },
-    { id: 'debug', label: 'D', color: 'text-muted-foreground/60' },
+    { id: 'error', label: 'Error' },
+    { id: 'warn', label: 'Warn' },
+    { id: 'info', label: 'Info' },
+    { id: 'log', label: 'Log' },
+    { id: 'debug', label: 'Debug' },
   ]
+  const LEVEL_ORDER: Record<string, number> = { error: 0, warn: 1, info: 2, log: 3, debug: 4 }
 
   let activeChannel: string = $state('all')
-  let activeLevels: Set<string> = $state(new Set(LEVELS.map(l => l.id)))
+  let minLevel: string = $state('debug') // show everything by default
   let autoScroll: boolean = $state(true)
   let scrollContainer: HTMLDivElement | undefined = $state()
 
@@ -47,16 +47,20 @@
       result = result.filter(e => e.serverId === filter.serverId)
     }
 
+    // Exclude 'errors'/'error' channel — duplicates console errors
+    result = result.filter(e => e.channel !== 'errors' && e.channel !== 'error')
+
     // Channel filter
     if (activeChannel !== 'all') {
       result = result.filter(e => e.channel === activeChannel)
     }
 
-    // Level filter
-    if (activeLevels.size < LEVELS.length) {
+    // Level threshold filter
+    if (minLevel !== 'debug') {
+      const threshold = LEVEL_ORDER[minLevel] ?? 4
       result = result.filter(e => {
         const level = e.payload?.level ?? 'log'
-        return activeLevels.has(level)
+        return (LEVEL_ORDER[level] ?? 3) <= threshold
       })
     }
 
@@ -82,13 +86,6 @@
   function jumpToBottom() {
     autoScroll = true
     if (scrollContainer) scrollContainer.scrollTop = scrollContainer.scrollHeight
-  }
-
-  function toggleLevel(id: string) {
-    const next = new Set(activeLevels)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    activeLevels = next
   }
 
   function formatTime(ts: number): string {
@@ -144,19 +141,15 @@
 
     <span class="w-px h-4 bg-border mx-1"></span>
 
-    <!-- Severity toggles -->
-    <div class="flex items-center gap-0.5">
+    <!-- Level threshold dropdown -->
+    <select
+      bind:value={minLevel}
+      class="text-[11px] bg-transparent text-muted-foreground border border-border rounded px-1.5 py-0.5 cursor-pointer hover:text-foreground focus:outline-none focus:border-accent"
+    >
       {#each LEVELS as lv}
-        <button
-          onclick={() => toggleLevel(lv.id)}
-          class="w-6 h-5 flex items-center justify-center rounded text-[10px] font-medium transition-colors
-            {activeLevels.has(lv.id) ? lv.color + ' bg-muted' : 'text-muted-foreground/40 line-through'}"
-          title={lv.id}
-        >
-          {lv.label}
-        </button>
+        <option value={lv.id}>{lv.label}+</option>
       {/each}
-    </div>
+    </select>
 
     <div class="flex-1"></div>
 
