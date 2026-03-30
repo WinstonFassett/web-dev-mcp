@@ -96,7 +96,17 @@ export function withWebDevMcp(
     webpack(config: any, webpackOptions: any) {
       const { dev, isServer } = webpackOptions
 
+      // Exclude gateway log directory from webpack watching
       if (dev) {
+        const existing = config.watchOptions?.ignored
+        let ignored: RegExp
+        if (existing instanceof RegExp) {
+          ignored = new RegExp(existing.source + '|[/\\\\]\\.web-dev-mcp[/\\\\]')
+        } else {
+          ignored = /[/\\]\.web-dev-mcp[/\\]/
+        }
+        config.watchOptions = { ...config.watchOptions, ignored }
+
         config.plugins = config.plugins || []
         config.plugins.push(new WebDevMcpBuildPlugin())
       }

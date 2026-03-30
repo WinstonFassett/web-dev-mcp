@@ -4,7 +4,8 @@
  *
  * For Turbopack, use <WebDevMcpInit /> from '@winstonfassett/web-dev-mcp-nextjs/init' instead.
  */
-if (typeof window !== 'undefined' && !(window as any).__WEB_DEV_MCP_LOADED__) {
+if (typeof window !== 'undefined' && !(window as any).__WEB_DEV_MCP_INSTRUMENT__) {
+  ;(window as any).__WEB_DEV_MCP_INSTRUMENT__ = true
   if (process.env.NEXT_PUBLIC_WEB_DEV_MCP_SERVER) {
     (window as any).__WEB_DEV_MCP_SERVER__ = process.env.NEXT_PUBLIC_WEB_DEV_MCP_SERVER
   }

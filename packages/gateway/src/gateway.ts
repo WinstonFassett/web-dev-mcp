@@ -79,7 +79,7 @@ export async function startGateway(options: GatewayOptions) {
   // Optional proxy plugin — if web-dev-mcp-proxy is installed, mount it
   let proxyMiddleware: ((req: any, res: any, next: () => void) => void) | null = null
   try {
-    const { createProxyMiddleware } = await import('web-dev-mcp-proxy')
+    const { createProxyMiddleware } = await import('web-dev-mcp-proxy' as string)
     proxyMiddleware = createProxyMiddleware(clientScript)
     console.log('  [web-dev-mcp] Proxy plugin loaded')
   } catch {
