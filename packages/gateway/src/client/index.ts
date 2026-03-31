@@ -437,6 +437,7 @@
                 }
               },
             }
+            renderOpts.features = { restoreScrollPosition: true }
             if (preset === 'viewport' || (preset !== 'full' && preset !== 'element')) {
               renderOpts.height = window.innerHeight
               renderOpts.style = { overflow: 'hidden' }
