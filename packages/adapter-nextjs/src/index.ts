@@ -62,8 +62,11 @@ export function withWebDevMcp(
     return nextConfig
   }
 
-  const serverId = String(process.pid)
-  process.env.__WEB_DEV_MCP_SERVER__ = serverId
+  // Stable server ID: set once by parent process, inherited by forked workers via env
+  if (!process.env.__WEB_DEV_MCP_SERVER__) {
+    process.env.__WEB_DEV_MCP_SERVER__ = `nextjs-${process.pid}`
+  }
+  const serverId = process.env.__WEB_DEV_MCP_SERVER__
 
   // Guard: Next.js forks workers that re-run this code. Only register once.
   if (!process.env.__WEB_DEV_MCP_REGISTERED__) {
