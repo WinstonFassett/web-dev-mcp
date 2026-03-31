@@ -7,8 +7,16 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { McpContext } from './mcp-server.js'
 import type { RegisteredServer } from './registry.js'
 import { truncateChannelFiles } from './session.js'
-import { getDiagnostics } from './log-reader.js'
+import { getSummary } from './log-reader.js'
 import { getBrowserStub, getAllBrowsers } from './rpc-server.js'
+
+// --- Opaque cursor: encodes a timestamp so callers don't depend on internal format ---
+function encodeCursor(ts: number): string {
+  return Buffer.from(String(ts)).toString('base64url')
+}
+function decodeCursor(cursor: string): number {
+  return Number(Buffer.from(cursor, 'base64url').toString())
+}
 
 // Persistent state per MCP session — holds capnweb proxy refs across eval_js_rpc calls
 // Agent stores refs like state.store = window.__REDUX_STORE__ and uses them in later calls
@@ -182,48 +190,45 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
   )
 
   // --- get_diagnostics ---
+  const ALL_CHANNELS = ['errors', 'console', 'server-console', 'network']
+
   mcp.tool(
     'get_diagnostics',
-    'Consolidated diagnostic snapshot: browser logs + server logs + build status + summary. TIP: Call `clear` before making changes, then use `since_checkpoint: true` to see only new events. Use `level: "error"` to filter noise.',
+    'Lightweight health check: summary counts + build/HMR status + log file paths. Returns no event payloads — read the NDJSON files directly for details (e.g. `tail -20 .web-dev-mcp/errors.ndjson`). Call `clear` first, make changes, then call this with the returned cursor to see only new activity.',
     {
       project: z.string().optional().describe('Project short ID or directory (overrides session default)'),
-      since_checkpoint: z.boolean().optional().describe('Use checkpoint from last clear'),
-      since_ts: z.number().optional().describe('Unix ms timestamp'),
-      limit: z.number().optional().describe('Max events per channel (default: 20, max: 200)'),
-      level: z.string().optional().describe('Filter by level (e.g. "error", "warn")'),
-      search: z.string().optional().describe('Text search across event payload (case-insensitive)'),
-      browser_id: z.string().optional().describe('Filter by browser ID'),
-      max_chars: z.number().optional().describe('Max total characters in response (default: 30000). Truncates oldest events first.'),
+      cursor: z.string().optional().describe('Opaque cursor from a previous get_diagnostics or clear call. Only counts events after this point.'),
+      channels: z.array(z.string()).optional().describe(`Channels to include in summary. Default: ${ALL_CHANNELS.join(', ')}`),
     },
     async (args) => {
       try {
         const logPaths = getLogPaths(ctx, args.project)
-        const result = getDiagnostics(logPaths, ctx.session, {
-          since_checkpoint: args.since_checkpoint,
-          since_ts: args.since_ts,
-          limit: args.limit,
-          level: args.level,
-          search: args.search,
-          browserId: args.browser_id,
-        }, ctx.devEventsWriter)
-        const maxChars = args.max_chars ?? 30000
-        let text = JSON.stringify(result, null, 2)
-        if (text.length > maxChars) {
-          // Progressively trim oldest events from least-important channels first
-          const channels = ['network', 'console', 'server_console', 'errors'] as const
-          for (const ch of channels) {
-            const logs = (result as any).logs
-            while (logs[ch]?.length > 0 && JSON.stringify(result, null, 2).length > maxChars) {
-              logs[ch].shift()
-            }
-          }
-          text = JSON.stringify(result, null, 2)
-          if (text.length > maxChars) {
-            text = text.slice(0, maxChars) + '\n...(truncated, use since_checkpoint or level filter to narrow results)'
-          }
-          ;(result as any).truncated = true
+        const channels = args.channels ?? ALL_CHANNELS
+        const sinceTs = args.cursor ? decodeCursor(args.cursor) : ctx.session.checkpointTs ?? undefined
+
+        const { summary, event_counts } = getSummary(logPaths, channels, sinceTs)
+
+        const buildStatus = ctx.devEventsWriter
+          ? ctx.devEventsWriter.getStatus(sinceTs)
+          : { last_update_at: null, last_error_at: null, last_error: undefined, update_count: 0, error_count: 0, pending: false }
+
+        const cursor = encodeCursor(Date.now())
+
+        // Build file paths map for channels that have log files
+        const files: Record<string, string> = {}
+        for (const ch of channels) {
+          if (logPaths[ch]) files[ch] = logPaths[ch]
         }
-        return { content: [{ type: 'text' as const, text }] }
+
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({
+            cursor,
+            build: buildStatus,
+            summary,
+            event_counts,
+            files,
+          }, null, 2) }],
+        }
       } catch (err: any) {
         return { content: [{ type: 'text' as const, text: JSON.stringify({ error: err.message }) }], isError: true }
       }
@@ -233,7 +238,7 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
   // --- clear ---
   mcp.tool(
     'clear',
-    'Truncate log files and set checkpoint. Call before a code change so get_diagnostics(since_checkpoint) shows only new events.',
+    'Truncate log files and return a cursor. Call before making code changes, then pass the cursor to get_diagnostics to see only new activity.',
     {
       project: z.string().optional().describe('Project short ID or directory (overrides session default)'),
       channels: z.array(z.string()).optional().describe('Which log channels to clear. Default: all.'),
@@ -247,9 +252,10 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
         }
         const countsBefore = truncateChannelFiles(logPaths, channelsToClear)
         ctx.session.checkpointTs = Date.now()
+        const cursor = encodeCursor(ctx.session.checkpointTs)
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
-            checkpoint_ts: ctx.session.checkpointTs,
+            cursor,
             logs_cleared: countsBefore,
           }, null, 2) }],
         }

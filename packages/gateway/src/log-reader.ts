@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs'
-import type { HarnessEvent, DiagnosticsResult, DiagnosticSummary, ConsolePayload, ErrorPayload, NetworkPayload, ServerConsolePayload } from './types.js'
+import type { HarnessEvent, DiagnosticSummary, ConsolePayload, ErrorPayload, NetworkPayload, ServerConsolePayload } from './types.js'
 import type { SessionState } from './session.js'
 import type { DevEventsWriter } from './writers/dev-events.js'
 
@@ -78,6 +78,72 @@ export function queryLogs(files: Record<string, string>, query: LogQuery): LogRe
   }
 }
 
+/** Count events per channel since a cursor timestamp — no event payloads returned */
+export function getSummary(
+  files: Record<string, string>,
+  channels: string[],
+  sinceTs?: number,
+): { summary: DiagnosticSummary; event_counts: Record<string, number> } {
+  const summary: DiagnosticSummary = {
+    error_count: 0,
+    warning_count: 0,
+    server_error_count: 0,
+    failed_requests: 0,
+    has_unhandled_rejections: false,
+  }
+  const event_counts: Record<string, number> = {}
+
+  for (const ch of channels) {
+    const filePath = files[ch]
+    if (!filePath || !existsSync(filePath)) {
+      event_counts[ch] = 0
+      continue
+    }
+    const content = readFileSync(filePath, 'utf-8')
+    if (!content.trim()) {
+      event_counts[ch] = 0
+      continue
+    }
+
+    let count = 0
+    for (const line of content.trim().split('\n')) {
+      if (!line.trim()) continue
+      let event: HarnessEvent
+      try {
+        event = JSON.parse(line)
+      } catch {
+        continue
+      }
+      if (sinceTs && event.ts <= sinceTs) continue
+      count++
+
+      if (ch === 'console') {
+        const p = event.payload as ConsolePayload
+        if (p.level === 'error') summary.error_count++
+        if (p.level === 'warn') summary.warning_count++
+      } else if (ch === 'errors') {
+        summary.error_count++
+        if ((event.payload as ErrorPayload).type === 'unhandled-rejection') {
+          summary.has_unhandled_rejections = true
+        }
+      } else if (ch === 'network') {
+        if ((event.payload as NetworkPayload).status >= 400) {
+          summary.failed_requests++
+        }
+      } else if (ch === 'server-console') {
+        const p = event.payload as ServerConsolePayload
+        if (p.level === 'error') summary.server_error_count++
+        if (p.level === 'warn') summary.warning_count++
+      }
+    }
+    event_counts[ch] = count
+  }
+
+  return { summary, event_counts }
+}
+
+// --- Legacy getDiagnostics kept for mcp-tools-full.ts compatibility ---
+
 interface DiagnosticsQuery {
   since_checkpoint?: boolean
   since_ts?: number
@@ -92,7 +158,7 @@ export function getDiagnostics(
   session: SessionState,
   query: DiagnosticsQuery,
   devEventsWriter?: DevEventsWriter,
-): DiagnosticsResult {
+) {
   const since_ts = query.since_checkpoint && session.checkpointTs
     ? session.checkpointTs
     : query.since_ts
