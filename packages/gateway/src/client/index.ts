@@ -398,8 +398,45 @@
             const { domToPng, domToJpeg } = (window as any).__modernScreenshot
             const render = format === 'png' ? domToPng : domToJpeg
 
+            // Extract @font-face rules so modern-screenshot can embed fonts correctly
+            // Skip for 'thumb' preset — speed over fidelity
+            let fontCss = ''
+            if (preset !== 'thumb') {
+              for (const sheet of document.styleSheets) {
+                try {
+                  for (const rule of (sheet as CSSStyleSheet).cssRules) {
+                    if (rule instanceof CSSFontFaceRule) {
+                      fontCss += rule.cssText + '\n'
+                    }
+                  }
+                } catch { /* CORS-blocked stylesheet, skip */ }
+              }
+            }
+
             // For viewport mode, clip to visible area
-            const renderOpts: any = { scale, quality: quality / 100 }
+            const renderOpts: any = {
+              scale,
+              quality: quality / 100,
+              font: fontCss ? { cssText: fontCss, preferredFormat: 'woff2' } : undefined,
+              // Proxy cross-origin resources (fonts, images) through the gateway to bypass CORS
+              fetchFn: async (url: string) => {
+                try {
+                  const u = new URL(url, location.href)
+                  if (u.origin === location.origin) return false // same-origin, use default fetch
+                  const proxied = gatewayOrigin + '/' + u.href
+                  const resp = await fetch(proxied)
+                  if (!resp.ok) return false
+                  const blob = await resp.blob()
+                  return new Promise<string>((resolve) => {
+                    const reader = new FileReader()
+                    reader.onloadend = () => resolve(reader.result as string)
+                    reader.readAsDataURL(blob)
+                  })
+                } catch {
+                  return false // fall back to default fetch
+                }
+              },
+            }
             if (preset === 'viewport' || (preset !== 'full' && preset !== 'element')) {
               renderOpts.height = window.innerHeight
               renderOpts.style = { overflow: 'hidden' }

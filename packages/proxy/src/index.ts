@@ -17,6 +17,18 @@ export function createProxyMiddleware(clientScript: string) {
     const match = url.match(/^\/(https?:\/\/.+)/)
     if (!match) return next()
 
+    // Handle CORS preflight
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '86400',
+      })
+      res.end()
+      return
+    }
+
     const targetUrl = new URL(match[1])
     req.url = targetUrl.pathname + targetUrl.search
 
@@ -37,7 +49,8 @@ export function createProxyMiddleware(clientScript: string) {
     proxy.on('proxyRes', (proxyRes) => {
       const contentType = proxyRes.headers['content-type'] ?? ''
       if (!contentType.includes('text/html')) {
-        res.writeHead(proxyRes.statusCode ?? 200, proxyRes.headers)
+        const headers = { ...proxyRes.headers, 'access-control-allow-origin': '*' }
+        res.writeHead(proxyRes.statusCode ?? 200, headers)
         proxyRes.pipe(res)
         return
       }
@@ -62,7 +75,7 @@ export function createProxyMiddleware(clientScript: string) {
         else if (html.includes('</body>')) html = html.replace('</body>', injection + '</body>')
         else html += injection
 
-        const headers = { ...proxyRes.headers }
+        const headers = { ...proxyRes.headers, 'access-control-allow-origin': '*' }
         delete headers['content-length']
         delete headers['content-encoding']
         res.writeHead(proxyRes.statusCode ?? 200, headers)
