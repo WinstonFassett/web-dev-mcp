@@ -151,6 +151,30 @@ export function withWebDevMcp(
       return config
     },
 
+    async headers() {
+      const userHeaders =
+        typeof nextConfig.headers === 'function'
+          ? await nextConfig.headers()
+          : []
+
+      // Patch CSP headers to allow browser fetches to the gateway (for screenshot proxy, etc.)
+      for (const entry of userHeaders) {
+        for (const header of entry.headers || []) {
+          if (header.key.toLowerCase() === 'content-security-policy' && header.value.includes('connect-src')) {
+            // Add http gateway URL to connect-src if not already present
+            if (!header.value.includes(gatewayUrl)) {
+              header.value = header.value.replace(
+                /connect-src\s+/,
+                `connect-src ${gatewayUrl} `
+              )
+            }
+          }
+        }
+      }
+
+      return userHeaders
+    },
+
     async rewrites() {
       const userRewrites =
         typeof nextConfig.rewrites === 'function'
