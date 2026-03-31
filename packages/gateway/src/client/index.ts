@@ -270,7 +270,13 @@
         get sessionStorage() { return new AnyTarget(sessionStorage) }
 
         eval(expression: string) {
-          const fn = new Function('return (' + expression + ')')
+          let fn: Function
+          try {
+            fn = new Function('return (' + expression + ')')
+          } catch (e) {
+            // Expression parse failed — wrap as async IIFE so statements work too
+            fn = new Function('return (async () => { ' + expression + ' })()')
+          }
           const raw = fn()
           if (raw && typeof raw === 'object' && typeof raw.then === 'function') {
             return raw.then((v: any) => typeof v === 'string' ? v : JSON.stringify(v))
@@ -428,29 +434,64 @@
           }
         }
 
-        // Find element by CSS selector or "text=..." for text content search
+        // Find element by CSS selector, "text=..." for text content search, or "tag:text=..." to constrain by tag
         findElement(selector: string): HTMLElement | null {
-          if (selector.startsWith('text=')) {
-            const search = selector.slice(5)
+          // Parse optional tag constraint: "a:text=Activate" or "button:text=Submit"
+          let tagConstraint: string | null = null
+          let textSelector = selector
+
+          if (selector.includes(':text=')) {
+            const colonIdx = selector.indexOf(':text=')
+            tagConstraint = selector.slice(0, colonIdx).toLowerCase()
+            textSelector = selector.slice(colonIdx + 1) // "text=Activate"
+          }
+
+          if (textSelector.startsWith('text=')) {
+            const search = textSelector.slice(5)
+            const SKIP_TAGS = new Set(['script', 'style', 'noscript', 'template', 'svg'])
+
+            function isVisible(el: HTMLElement): boolean {
+              if (SKIP_TAGS.has(el.tagName.toLowerCase())) return false
+              if (el.getAttribute('aria-hidden') === 'true') return false
+              if (el.offsetParent === null && el !== document.body && el.tagName !== 'HTML') {
+                const style = window.getComputedStyle(el)
+                if (style.display === 'none' || style.visibility === 'hidden') return false
+                if (style.position !== 'fixed' && style.position !== 'sticky') return false
+              }
+              return true
+            }
+
+            function matchesTag(el: HTMLElement): boolean {
+              return !tagConstraint || el.tagName.toLowerCase() === tagConstraint
+            }
+
+            // Pass 1: direct text children (most specific match)
             const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
             let node: Node | null
             while (node = walker.nextNode()) {
               const el = node as HTMLElement
+              if (!isVisible(el) || !matchesTag(el)) continue
               const directText = Array.from(el.childNodes)
                 .filter(n => n.nodeType === 3)
                 .map(n => (n.textContent || '').trim())
                 .join(' ')
               if (directText && directText.includes(search)) return el
             }
+
+            // Pass 2: textContent match on leaf elements (fallback)
             const walker2 = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
             while (node = walker2.nextNode()) {
-              if ((node as HTMLElement).textContent?.includes(search)) {
-                const children = (node as HTMLElement).querySelectorAll('*')
+              const el = node as HTMLElement
+              if (!isVisible(el)) continue
+              if (el.textContent?.includes(search)) {
+                const children = el.querySelectorAll('*')
                 for (let i = children.length - 1; i >= 0; i--) {
-                  if (children[i].textContent?.trim().includes(search) &&
-                      children[i].children.length === 0) return children[i] as HTMLElement
+                  const child = children[i] as HTMLElement
+                  if (!isVisible(child) || !matchesTag(child)) continue
+                  if (child.textContent?.trim().includes(search) &&
+                      child.children.length === 0) return child
                 }
-                return node as HTMLElement
+                if (matchesTag(el)) return el
               }
             }
             return null

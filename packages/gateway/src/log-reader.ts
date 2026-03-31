@@ -32,7 +32,7 @@ export function queryLogs(files: Record<string, string>, query: LogQuery): LogRe
 
   const lines = content.trim().split('\n')
   const total = lines.length
-  const limit = Math.min(query.limit ?? 50, 200)
+  const limit = Math.min(query.limit ?? 20, 200)
   const sinceId = query.sinceId ?? 0
 
   const events: HarnessEvent[] = []

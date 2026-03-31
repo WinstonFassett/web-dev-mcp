@@ -1,6 +1,8 @@
 // Core MCP tools: set_project, list_projects, list_browsers, get_diagnostics, clear, eval_js_rpc
 
 import { z } from 'zod'
+import { writeFileSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { McpContext } from './mcp-server.js'
 import type { RegisteredServer } from './registry.js'
@@ -182,15 +184,16 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
   // --- get_diagnostics ---
   mcp.tool(
     'get_diagnostics',
-    'Consolidated diagnostic snapshot: browser logs + server logs + build status + summary.',
+    'Consolidated diagnostic snapshot: browser logs + server logs + build status + summary. TIP: Call `clear` before making changes, then use `since_checkpoint: true` to see only new events. Use `level: "error"` to filter noise.',
     {
       project: z.string().optional().describe('Project short ID or directory (overrides session default)'),
       since_checkpoint: z.boolean().optional().describe('Use checkpoint from last clear'),
       since_ts: z.number().optional().describe('Unix ms timestamp'),
-      limit: z.number().optional().describe('Max events per channel (default: 50, max: 200)'),
+      limit: z.number().optional().describe('Max events per channel (default: 20, max: 200)'),
       level: z.string().optional().describe('Filter by level (e.g. "error", "warn")'),
       search: z.string().optional().describe('Text search across event payload (case-insensitive)'),
       browser_id: z.string().optional().describe('Filter by browser ID'),
+      max_chars: z.number().optional().describe('Max total characters in response (default: 30000). Truncates oldest events first.'),
     },
     async (args) => {
       try {
@@ -203,7 +206,24 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
           search: args.search,
           browserId: args.browser_id,
         }, ctx.devEventsWriter)
-        return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
+        const maxChars = args.max_chars ?? 30000
+        let text = JSON.stringify(result, null, 2)
+        if (text.length > maxChars) {
+          // Progressively trim oldest events from least-important channels first
+          const channels = ['network', 'console', 'server_console', 'errors'] as const
+          for (const ch of channels) {
+            const logs = (result as any).logs
+            while (logs[ch]?.length > 0 && JSON.stringify(result, null, 2).length > maxChars) {
+              logs[ch].shift()
+            }
+          }
+          text = JSON.stringify(result, null, 2)
+          if (text.length > maxChars) {
+            text = text.slice(0, maxChars) + '\n...(truncated, use since_checkpoint or level filter to narrow results)'
+          }
+          ;(result as any).truncated = true
+        }
+        return { content: [{ type: 'text' as const, text }] }
       } catch (err: any) {
         return { content: [{ type: 'text' as const, text: JSON.stringify({ error: err.message }) }], isError: true }
       }
@@ -317,12 +337,39 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
           state,
           browser,
         )
+
+        // Intercept screenshot results — return as MCP image content instead of 76k+ base64 JSON
+        if (result && typeof result === 'object' && typeof result.data === 'string' && result.data.startsWith('data:image/')) {
+          const match = result.data.match(/^data:image\/(\w+);base64,(.+)$/)
+          if (match) {
+            const ext = match[1] === 'jpeg' ? 'jpg' : match[1]
+            const base64 = match[2]
+            const mimeType = `image/${match[1]}` as 'image/png' | 'image/jpeg'
+            // Also save to disk for non-MCP consumers
+            const screenshotDir = join(ctx.session.logDir, 'screenshots')
+            mkdirSync(screenshotDir, { recursive: true })
+            const filename = `screenshot-${Date.now()}.${ext}`
+            const filePath = join(screenshotDir, filename)
+            writeFileSync(filePath, Buffer.from(base64, 'base64'))
+            return {
+              content: [
+                { type: 'image' as const, data: base64, mimeType },
+                { type: 'text' as const, text: JSON.stringify({ screenshot: filePath, width: result.width, height: result.height, duration_ms: Date.now() - start }, null, 2) },
+              ],
+            }
+          }
+        }
+
         const serialized = typeof result === 'string' ? result
           : result === undefined ? 'undefined'
           : result === null ? 'null'
           : JSON.stringify(result, null, 2)
+        const response: Record<string, any> = { result: serialized, duration_ms: Date.now() - start }
+        if (result === undefined && !/\breturn\b/.test(args.code)) {
+          response.hint = 'Your code returned undefined. The body runs as an async function — use `return` to send back a value. Example: return await document.title'
+        }
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ result: serialized, duration_ms: Date.now() - start }, null, 2) }],
+          content: [{ type: 'text' as const, text: JSON.stringify(response, null, 2) }],
         }
       } catch (err: any) {
         return {
