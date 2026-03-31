@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "description": "Universal web development MCP gateway — proxy any dev server with live browser observability for AI agents",
   "type": "module",
-  "engines": { "node": ">=20.6.0" },
+  "engines": {
+    "node": ">=20.6.0"
+  },
   "main": "dist/gateway.js",
   "types": "dist/gateway.d.ts",
   "bin": {
@@ -49,7 +51,9 @@
     "directory": "packages/gateway"
   },
   "homepage": "https://github.com/WinstonFassett/web-dev-mcp",
-  "bugs": { "url": "https://github.com/WinstonFassett/web-dev-mcp/issues" },
+  "bugs": {
+    "url": "https://github.com/WinstonFassett/web-dev-mcp/issues"
+  },
   "license": "MIT",
   "publishConfig": {
     "access": "public"
@@ -59,6 +63,7 @@
     "capnweb": "^0.6.1",
     "element-source": "^0.0.5",
     "modern-screenshot": "^4.6.8",
+    "web-dev-mcp-proxy": "^0.1.0",
     "ws": "^8.20.0",
     "zod": "^4.0.0"
   },
