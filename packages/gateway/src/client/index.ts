@@ -540,24 +540,31 @@
         click(selector: string) {
           const el = this.findElement(selector)
           if (!el) return { error: 'Element not found: ' + selector }
-          el.click()
+          // Full pointer event sequence for framework compatibility (Next.js Link, Radix UI, etc.)
+          el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: window }))
+          el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, view: window }))
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
           return { clicked: selector, tag: el.tagName.toLowerCase() }
         }
 
         fill(selector: string, value: string) {
           const el = this.findElement(selector) as HTMLInputElement | HTMLTextAreaElement | null
           if (!el) return { error: 'Element not found: ' + selector }
+          // Focus + clear first
+          el.focus()
           const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
             HTMLInputElement.prototype, 'value'
           )?.set || Object.getOwnPropertyDescriptor(
             HTMLTextAreaElement.prototype, 'value'
           )?.set
-          if (nativeInputValueSetter) {
-            nativeInputValueSetter.call(el, value)
-          } else {
-            el.value = value
-          }
+          // Set value per character to trigger React controlled input handlers
+          const setter = nativeInputValueSetter || ((v: string) => { el.value = v })
+          setter.call(el, '')
           el.dispatchEvent(new Event('input', { bubbles: true }))
+          for (const char of value) {
+            setter.call(el, el.value + char)
+            el.dispatchEvent(new Event('input', { bubbles: true }))
+          }
           el.dispatchEvent(new Event('change', { bubbles: true }))
           return { filled: selector, value }
         }
