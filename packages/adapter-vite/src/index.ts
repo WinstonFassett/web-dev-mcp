@@ -55,10 +55,10 @@ export function webDevMcp(options: ViteAdapterOptions = {}): Plugin {
       // Connect dev events WebSocket
       devEvents = await connectDevEvents(gatewayUrl, serverId!)
 
-      // Serve gateway's bundled client.js at /__client.js
+      // Serve gateway's bundled client.js at /__web-dev-mcp.js
       const clientPath = resolveClientPath()
       server.middlewares.use((req: any, res: any, next: any) => {
-        if (req.url === '/__client.js') {
+        if (req.url === '/__web-dev-mcp.js') {
           if (!clientSource) {
             clientSource = readFileSync(clientPath, 'utf-8')
           }
@@ -77,7 +77,7 @@ export function webDevMcp(options: ViteAdapterOptions = {}): Plugin {
       }
       return [
         { tag: 'script', children: initScript, injectTo: 'head-prepend' as const },
-        { tag: 'script', attrs: { src: '/__client.js' }, injectTo: 'head-prepend' as const },
+        { tag: 'script', attrs: { src: '/__web-dev-mcp.js' }, injectTo: 'head-prepend' as const },
       ]
     },
 
@@ -97,9 +97,9 @@ function resolveClientPath(): string {
   try {
     const gatewayPkg = import.meta.resolve('@winstonfassett/web-dev-mcp-gateway')
     const gatewayDir = new URL('.', gatewayPkg).pathname
-    return join(gatewayDir, 'client.js')
+    return join(gatewayDir, 'web-dev-mcp-client.js')
   } catch {
     // Fallback for workspace/linked setups
-    return join(process.cwd(), 'node_modules', '@winstonfassett', 'web-dev-mcp-gateway', 'dist', 'client.js')
+    return join(process.cwd(), 'node_modules', '@winstonfassett', 'web-dev-mcp-gateway', 'dist', 'web-dev-mcp-client.js')
   }
 }

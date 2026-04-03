@@ -165,7 +165,7 @@ export function withWebDevMcp(
         { source: '/__mcp/:path*', destination: `${gatewayUrl}/__mcp/:path*` },
         { source: '/__rpc', destination: `${gatewayUrl}/__rpc` },
         { source: '/__events', destination: `${gatewayUrl}/__events` },
-        { source: '/__client.js', destination: `${gatewayUrl}/__client.js` },
+        { source: '/__web-dev-mcp.js', destination: `${gatewayUrl}/__web-dev-mcp.js` },
       ]
 
       return {

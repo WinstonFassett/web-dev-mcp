@@ -13,7 +13,7 @@ if (typeof window !== 'undefined' && !(window as any).__WEB_DEV_MCP_INSTRUMENT__
     (window as any).__WEB_DEV_MCP_ORIGIN__ = process.env.NEXT_PUBLIC_WEB_DEV_MCP_GATEWAY
   }
   const script = document.createElement('script')
-  script.src = '/__client.js'
+  script.src = '/__web-dev-mcp.js'
   script.async = true
   document.head.appendChild(script)
 }

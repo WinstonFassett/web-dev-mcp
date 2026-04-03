@@ -56,7 +56,7 @@ export function createProxyMiddleware(clientScript: string) {
         }
         let html = buffer.toString('utf-8')
         const basePath = '/' + targetUrl.origin + targetUrl.pathname.replace(/\/[^/]*$/, '/')
-        const injection = `<base href="${basePath}"><script src="/__client.js"></script>`
+        const injection = `<base href="${basePath}"><script src="/__web-dev-mcp.js"></script>`
         if (html.includes('</head>')) html = html.replace('</head>', injection + '</head>')
         else if (html.includes('<head>')) html = html.replace('<head>', '<head>' + injection)
         else if (html.includes('</body>')) html = html.replace('</body>', injection + '</body>')
