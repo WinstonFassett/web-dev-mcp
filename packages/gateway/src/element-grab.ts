@@ -46,7 +46,7 @@ export function getAllSelections(): ElementSelection[] {
 export function registerElementGrabTool(mcp: McpServer) {
   mcp.tool(
     'get_element_context',
-    `Get the latest UI element selected by the user in the browser. The user holds Cmd+C to activate element-grab, hovers over an element, and clicks to select it. Returns a compact component card with: component name, source file location, CSS selector, and a live ref hint (window.__LAST_GRABBED__.element) that can be used with eval_js_rpc for live DOM manipulation.`,
+    `Get the latest UI element selected by the user in the browser. The user holds Cmd+C to activate element-grab, hovers over an element, and clicks to select it. Returns a compact component card with: component name, source file location, CSS selector, and a live ref hint (window.__LAST_GRABBED__.element) that can be used with eval_js for live DOM manipulation.`,
     {
       all: z.boolean().optional().describe('Return all recent selections (max 10) instead of just the latest'),
     },

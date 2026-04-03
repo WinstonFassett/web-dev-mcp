@@ -43,9 +43,8 @@ See peer ../personal-dev-practices/SKILL.md for individual work habits and pract
 
 ## Lessons learned
 
-- capnweb: passing an RpcTarget as a callback for the server to call later doesn't work — refs get disposed when the originating call returns. For server→client push, use ReadableStream over capnweb instead (proven working).
-- After navigate(), may need to wait ~2-3s for RPC reconnect
-- eval_js_rpc uses AsyncFunction, not vm.runInContext (cross-realm serialization)
+- After navigate(), may need to wait ~2-3s for browser reconnect
+- eval_js runs code directly in the browser. Promises are auto-awaited. Accepts string[] for auto-waited pipelines.
 
 ## Conventions
 

@@ -5,7 +5,7 @@ description: Storybook-specific patterns for web-dev-mcp. Use when working with 
 
 # web-dev-mcp-storybook
 
-Extends web-dev-mcp with Storybook-specific workflows. Requires the `web-dev-mcp` skill for core tools (`eval_js_rpc`, `get_diagnostics`, `clear`, etc.).
+Extends web-dev-mcp with Storybook-specific workflows. Requires the `web-dev-mcp` skill for core tools (`eval_js`, `get_diagnostics`, `clear`, etc.).
 
 ## Detecting Storybook
 
@@ -63,7 +63,7 @@ clear
 # edit component source — HMR reloads the story automatically
 get_diagnostics({ since_checkpoint: true })
 # check for errors in this component only (no app-wide noise)
-eval_js_rpc: return await browser.screenshot()
+eval_js: return await browser.screenshot()
 # verify the component visually
 ```
 
@@ -99,10 +99,10 @@ return await browser.markdown()
 // → "<button[submit]: Primary Button>"
 
 // Raw text content
-return await document.querySelector('#storybook-root').innerText
+return document.querySelector('#storybook-root').innerText
 
 // HTML structure
-return await document.querySelector('#storybook-root').innerHTML
+return document.querySelector('#storybook-root').innerHTML
 ```
 
 ## Interact with rendered component
