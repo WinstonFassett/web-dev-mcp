@@ -9,29 +9,26 @@ import type { McpContext } from './mcp-server.js'
 import { getLogPaths, resolveProject } from './mcp-tools-core.js'
 import { truncateChannelFiles } from './session.js'
 import { queryLogs } from './log-reader.js'
-import { getBrowserStub } from './rpc-server.js'
+import { browserCommand } from './rpc-server.js'
 
-function getStub(ctx: McpContext) {
+function getServerId(ctx: McpContext): string | undefined {
   try {
     const resolved = resolveProject(ctx)
     if (resolved.type === 'gateway') return undefined
-    return getBrowserStub(resolved.serverId)
+    return resolved.serverId
   } catch {
     return undefined
   }
 }
 
-function noBrowser(ctx: McpContext) {
-  try {
-    resolveProject(ctx)
-    return { content: [{ type: 'text' as const, text: JSON.stringify({ error: 'No browser connected' }) }], isError: true }
-  } catch (err: any) {
-    return { content: [{ type: 'text' as const, text: JSON.stringify({ error: err.message }) }], isError: true }
-  }
-}
-
 function errResult(err: any) {
   return { content: [{ type: 'text' as const, text: JSON.stringify({ error: err.message ?? String(err) }) }], isError: true }
+}
+
+/** Send a command to the browser, returning error result if no browser */
+async function cmd(ctx: McpContext, method: string, params?: any) {
+  const serverId = getServerId(ctx)
+  return browserCommand(serverId, method, params)
 }
 
 export function registerFullTools(mcp: McpServer, ctx: McpContext) {
@@ -111,13 +108,13 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
         if (elapsed >= timeout) {
           return { content: [{ type: 'text' as const, text: JSON.stringify({ matched: false, duration_ms: elapsed, error: 'Timeout' }, null, 2) }] }
         }
-        const stub = getStub(ctx)
-        if (!stub) { await new Promise(r => setTimeout(r, interval)); continue }
         try {
-          const result = await stub.eval(args.check)
-          if (result) return { content: [{ type: 'text' as const, text: JSON.stringify({ matched: true, duration_ms: Date.now() - startTs }, null, 2) }] }
-        } catch (err: any) {
-          return { ...errResult(err), content: [{ type: 'text' as const, text: JSON.stringify({ matched: false, duration_ms: Date.now() - startTs, error: err.message }, null, 2) }] }
+          const result = await cmd(ctx, 'eval', { code: `return (${args.check})` })
+          if (result && result !== 'undefined' && result !== 'null' && result !== 'false') {
+            return { content: [{ type: 'text' as const, text: JSON.stringify({ matched: true, duration_ms: Date.now() - startTs }, null, 2) }] }
+          }
+        } catch {
+          // Browser not connected yet, keep polling
         }
         await new Promise(r => setTimeout(r, interval))
       }
@@ -126,17 +123,15 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
 
   mcp.tool(
     'eval_in_browser',
-    'Run JavaScript directly in the browser. Access to all browser globals, framework state, closures. May be blocked by CSP.',
+    'Run JavaScript directly in the browser. Access to all browser globals, framework state, closures.',
     {
       expression: z.string().describe('JavaScript expression to evaluate.'),
       timeout: z.number().optional().describe('Timeout in ms (default: 5000)'),
     },
     async (args) => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
       try {
         const start = Date.now()
-        const result = await stub.eval(args.expression)
+        const result = await cmd(ctx, 'eval', { code: `return (${args.expression})` })
         return { content: [{ type: 'text' as const, text: JSON.stringify({ result, duration_ms: Date.now() - start }, null, 2) }] }
       } catch (err: any) { return errResult(err) }
     },
@@ -169,10 +164,8 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
       text_length: z.number().optional().describe('Max text chars per element (default: 100)'),
     },
     async (args) => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
       try {
-        const result = await stub.queryDom(args.selector ?? 'body', { max_depth: args.max_depth, attributes: args.attributes, text_length: args.text_length })
+        const result = await cmd(ctx, 'queryDom', { selector: args.selector ?? 'body', max_depth: args.max_depth, attributes: args.attributes, text_length: args.text_length })
         return { content: [{ type: 'text' as const, text: (result as any).html ?? JSON.stringify(result, null, 2) }] }
       } catch (err: any) { return errResult(err) }
     },
@@ -190,15 +183,13 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
       inline: z.boolean().optional().describe('Return base64 image data instead of saving to file. Default: false.'),
     },
     async (args) => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
       try {
         const opts: any = {}
         if (args.selector) opts.selector = args.selector
         if (args.preset) opts.preset = args.preset
         if (args.format) opts.format = args.format
         if (args.quality) opts.quality = args.quality
-        const result = await stub.screenshot(Object.keys(opts).length > 0 ? opts : undefined)
+        const result = await cmd(ctx, 'screenshot', Object.keys(opts).length > 0 ? opts : undefined)
         if ((result as any).error) return errResult(result)
         const data = (result as any).data
         const mimeType = data.startsWith('data:image/png') ? 'image/png' : 'image/jpeg'
@@ -241,9 +232,7 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
   mcp.tool('click', 'Click an element. Supports CSS selector or text= prefix.',
     { selector: z.string().describe('CSS selector or text=...') },
     async (args) => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
-      try { const r = await stub.click(args.selector); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
+      try { const r = await cmd(ctx, 'click', { selector: args.selector }); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
       catch (err: any) { return errResult(err) }
     },
   )
@@ -251,9 +240,7 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
   mcp.tool('fill', 'Fill an input/textarea. Dispatches input and change events.',
     { selector: z.string().describe('CSS selector or text=...'), value: z.string().describe('Value to fill') },
     async (args) => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
-      try { const r = await stub.fill(args.selector, args.value); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
+      try { const r = await cmd(ctx, 'fill', { selector: args.selector, value: args.value }); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
       catch (err: any) { return errResult(err) }
     },
   )
@@ -261,9 +248,7 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
   mcp.tool('select_option', 'Select an option in a <select> element.',
     { selector: z.string().describe('CSS selector'), value: z.string().describe('Option value or text') },
     async (args) => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
-      try { const r = await stub.selectOption(args.selector, args.value); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
+      try { const r = await cmd(ctx, 'selectOption', { selector: args.selector, value: args.value }); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
       catch (err: any) { return errResult(err) }
     },
   )
@@ -271,9 +256,7 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
   mcp.tool('hover', 'Hover over an element.',
     { selector: z.string().describe('CSS selector or text=...') },
     async (args) => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
-      try { const r = await stub.hover(args.selector); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
+      try { const r = await cmd(ctx, 'hover', { selector: args.selector }); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
       catch (err: any) { return errResult(err) }
     },
   )
@@ -285,37 +268,29 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
       selector: z.string().optional().describe('Target element. Default: active element.'),
     },
     async (args) => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
-      try { const r = await stub.pressKey(args.key, args.modifiers, args.selector); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
+      try { const r = await cmd(ctx, 'pressKey', { key: args.key, modifiers: args.modifiers, selector: args.selector }); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
       catch (err: any) { return errResult(err) }
     },
   )
 
-  mcp.tool('navigate', 'Navigate the browser to a URL. Disconnects RPC — wait before next call.',
+  mcp.tool('navigate', 'Navigate the browser to a URL. Disconnects — wait before next call.',
     { url: z.string().describe('URL to navigate to') },
     async (args) => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
-      try { await stub.eval(`window.location.href = ${JSON.stringify(args.url)}`); return { content: [{ type: 'text' as const, text: JSON.stringify({ navigated: args.url }) }] } }
+      try { const r = await cmd(ctx, 'navigate', { url: args.url }); return { content: [{ type: 'text' as const, text: JSON.stringify(r) }] } }
       catch (err: any) { return errResult(err) }
     },
   )
 
   mcp.tool('go_back', 'Navigate back in browser history.',
     async () => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
-      try { await stub.eval('history.back()'); return { content: [{ type: 'text' as const, text: JSON.stringify({ action: 'back' }) }] } }
+      try { await cmd(ctx, 'eval', { code: 'history.back()' }); return { content: [{ type: 'text' as const, text: JSON.stringify({ action: 'back' }) }] } }
       catch (err: any) { return errResult(err) }
     },
   )
 
   mcp.tool('go_forward', 'Navigate forward in browser history.',
     async () => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
-      try { await stub.eval('history.forward()'); return { content: [{ type: 'text' as const, text: JSON.stringify({ action: 'forward' }) }] } }
+      try { await cmd(ctx, 'eval', { code: 'history.forward()' }); return { content: [{ type: 'text' as const, text: JSON.stringify({ action: 'forward' }) }] } }
       catch (err: any) { return errResult(err) }
     },
   )
@@ -323,9 +298,7 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
   mcp.tool('scroll', 'Scroll to an element or coordinates.',
     { selector: z.string().optional(), x: z.number().optional(), y: z.number().optional() },
     async (args) => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
-      try { const r = await stub.scroll(args.selector, args.x, args.y); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
+      try { const r = await cmd(ctx, 'scroll', { selector: args.selector, x: args.x, y: args.y }); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
       catch (err: any) { return errResult(err) }
     },
   )
@@ -333,9 +306,7 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
   mcp.tool('get_visible_text', 'Get the visible text content of an element or the whole page.',
     { selector: z.string().optional().describe('CSS selector. Default: body.') },
     async (args) => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
-      try { const r = await stub.getVisibleText(args.selector); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
+      try { const r = await cmd(ctx, 'getVisibleText', { selector: args.selector }); return { content: [{ type: 'text' as const, text: JSON.stringify(r, null, 2) }], isError: !!(r as any).error } }
       catch (err: any) { return errResult(err) }
     },
   )
@@ -343,10 +314,8 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
   mcp.tool('get_page_markdown', 'Convert page DOM to markdown with links, headings, form elements.',
     { selector: z.string().optional().describe('CSS selector. Default: body.') },
     async (args) => {
-      const stub = getStub(ctx)
-      if (!stub) return noBrowser(ctx)
       try {
-        const r = await (stub as any).getPageMarkdown(args.selector)
+        const r = await cmd(ctx, 'getPageMarkdown', { selector: args.selector })
         if ((r as any).error) return { content: [{ type: 'text' as const, text: JSON.stringify(r) }], isError: true }
         return { content: [{ type: 'text' as const, text: (r as any).markdown }] }
       } catch (err: any) { return errResult(err) }

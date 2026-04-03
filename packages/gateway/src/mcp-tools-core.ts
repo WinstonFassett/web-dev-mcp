@@ -1,4 +1,4 @@
-// Core MCP tools: set_project, list_projects, list_browsers, get_diagnostics, clear, eval_js_rpc
+// Core MCP tools: set_project, list_projects, list_browsers, get_diagnostics, clear, eval_js
 
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -6,11 +6,7 @@ import type { McpContext } from './mcp-server.js'
 import type { RegisteredServer } from './registry.js'
 import { truncateChannelFiles } from './session.js'
 import { getDiagnostics } from './log-reader.js'
-import { getBrowserStub, getAllBrowsers } from './rpc-server.js'
-
-// Persistent state per MCP session — holds capnweb proxy refs across eval_js_rpc calls
-// Agent stores refs like state.store = window.__REDUX_STORE__ and uses them in later calls
-export const sessionStates = new Map<string, Record<string, any>>()
+import { browserCommand, getAllBrowsers } from './rpc-server.js'
 
 // --- Project Resolution ---
 
@@ -239,84 +235,23 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
     },
   )
 
-  // --- eval_js_rpc ---
+  // --- eval_js ---
   mcp.tool(
-    'eval_js_rpc',
-    'Run JavaScript server-side with document/window as capnweb remote proxies to the browser DOM. Each property access or method call is an RPC round-trip. CSP-safe, multi-statement, supports await. Optional `state` object persists across calls — use it to hold refs to JS runtime objects (stores, globals) that survive HMR. Use `browser.*` helpers for common operations.',
+    'eval_js',
+    'Run JavaScript in the browser with full DOM access. Multi-statement, supports await. Persistent `state` object survives across calls. `browser.*` helpers for common operations.',
     {
-      code: z.string().describe('JavaScript code. Globals: `document`, `window` (capnweb proxies), `state` (persists across calls — store refs here), `browser` (helpers: .markdown(sel?), .screenshot(sel?), .navigate(url), .click(sel), .fill(sel, val), .waitFor(fnOrSel, interval?, timeout?), .eval(expr), .elementSource(sel) — returns {componentName, source: {filePath, lineNumber}}). Use `await` to read values.'),
+      code: z.string().describe('JavaScript code to run in browser. Globals: `document`, `window`, `localStorage`, `sessionStorage` (real browser objects), `state` (persists across calls), `browser` (helpers: .markdown(sel?), .screenshot(sel?), .navigate(url), .click(sel), .fill(sel, val), .waitFor(selectorOrFn, interval?, timeout?), .eval(expr), .elementSource(sel)).'),
       project: z.string().optional().describe('Project short ID or directory (overrides session default)'),
     },
-    async (args, extra) => {
+    async (args) => {
       try {
         const resolved = resolveProject(ctx, args.project)
         if (resolved.type === 'gateway') {
           return { content: [{ type: 'text' as const, text: JSON.stringify({ error: '__gateway has no browser. Use set_project to target a real project.' }) }], isError: true }
         }
-        const stub = getBrowserStub(resolved.serverId)
-        if (!stub) {
-          const browsers = getAllBrowsers()
-          const details = browsers.length > 0
-            ? ` (${browsers.length} browser(s) connected with servers: ${browsers.map(b => b.serverId ?? 'untagged').join(', ')})`
-            : ' (no browsers connected)'
-          return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `No browser connected for server ${resolved.serverId}${details}` }) }], isError: true }
-        }
 
         const start = Date.now()
-        const sessionId = extra.sessionId ?? '_default'
-        if (!sessionStates.has(sessionId)) {
-          sessionStates.set(sessionId, {})
-        }
-        const state = sessionStates.get(sessionId)!
-        const doc = (stub as any).document
-        const browser = {
-          eval: (expression: string) => stub.eval(expression),
-          elementSource: async (selector: string) => {
-            const result = await stub.eval(
-              `(function() {` +
-              ` var el = document.querySelector && '${selector.replace(/'/g, "\\'")}'.startsWith('text=')` +
-              `   ? (function() { var s = '${selector.replace(/'/g, "\\'")}'.slice(5); var w = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT); var n; while (n = w.nextNode()) { if (n.textContent && n.textContent.trim().includes(s) && n.children.length === 0) return n; } return null; })()` +
-              `   : document.querySelector('${selector.replace(/'/g, "\\'")}');` +
-              ` if (!el) return JSON.stringify({ error: 'Element not found: ${selector.replace(/'/g, "\\'")}' });` +
-              ` if (typeof window.__resolveElementInfo !== 'function') return JSON.stringify({ error: 'element-source not installed' });` +
-              ` return window.__resolveElementInfo(el).then(function(i) { return JSON.stringify(i); });` +
-              `})()`
-            )
-            try { return JSON.parse(result) } catch { return { error: result } }
-          },
-          markdown: (selector?: string) => (stub as any).getPageMarkdown(selector),
-          screenshot: (selectorOrOpts?: string | Record<string, any>) => (stub as any).screenshot(selectorOrOpts),
-          navigate: (url: string) => (stub as any).navigate(url),
-          click: (selector: string) => (stub as any).click(selector),
-          fill: (selector: string, value: string) => (stub as any).fill(selector, value),
-          waitFor: async (fnOrSelector: string | Function, interval = 100, timeout = 5000) => {
-            const deadline = Date.now() + timeout
-            while (Date.now() < deadline) {
-              try {
-                let result
-                if (typeof fnOrSelector === 'string') {
-                  result = await doc.querySelector(fnOrSelector)
-                } else {
-                  result = await fnOrSelector()
-                }
-                if (result) return result
-              } catch {}
-              await new Promise(r => setTimeout(r, interval))
-            }
-            throw new Error(`waitFor timed out after ${timeout}ms`)
-          },
-        }
-
-        const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
-        const fn = new AsyncFunction('document', 'window', 'localStorage', 'sessionStorage', 'state', 'browser', args.code)
-        const result = await fn(
-          (stub as any).document,
-          (stub as any).window,
-          (stub as any).localStorage,
-          (stub as any).sessionStorage,
-          state,
-          browser,
-        )
+        const result = await browserCommand(resolved.serverId, 'eval', { code: args.code })
         const serialized = typeof result === 'string' ? result
           : result === undefined ? 'undefined'
           : result === null ? 'null'

@@ -1,91 +1,27 @@
-import { RpcSession, RpcTarget, type RpcTransport, type RpcStub } from 'capnweb'
+// Browser command WebSocket — simple JSON protocol
+//
+// Gateway → Browser: { id, method, params }
+// Browser → Gateway: { id, result } | { id, error }
+
 import { WebSocketServer, type WebSocket as WsWebSocket } from 'ws'
 import type { ServerRegistry } from './registry.js'
 import { queryLogs } from './log-reader.js'
 
-function createWsTransport(ws: WsWebSocket): RpcTransport {
-  const messageQueue: string[] = []
-  let resolveWaiter: ((msg: string) => void) | null = null
-  let rejectWaiter: ((err: Error) => void) | null = null
+// --- Command protocol types ---
 
-  ws.on('message', (data) => {
-    const msg = data.toString()
-    if (resolveWaiter) {
-      const resolve = resolveWaiter
-      resolveWaiter = null
-      rejectWaiter = null
-      resolve(msg)
-    } else {
-      messageQueue.push(msg)
-    }
-  })
-
-  ws.on('close', () => {
-    if (rejectWaiter) {
-      rejectWaiter(new Error('WebSocket closed'))
-      resolveWaiter = null
-      rejectWaiter = null
-    }
-  })
-
-  ws.on('error', (err) => {
-    if (rejectWaiter) {
-      rejectWaiter(err instanceof Error ? err : new Error(String(err)))
-      resolveWaiter = null
-      rejectWaiter = null
-    }
-  })
-
-  return {
-    send(message: string) {
-      return new Promise<void>((resolve, reject) => {
-        ws.send(message, (err) => {
-          if (err) reject(err)
-          else resolve()
-        })
-      })
-    },
-    receive() {
-      if (messageQueue.length > 0) {
-        return Promise.resolve(messageQueue.shift()!)
-      }
-      return new Promise<string>((resolve, reject) => {
-        resolveWaiter = resolve
-        rejectWaiter = reject
-      })
-    },
-    abort(reason: any) {
-      ws.close(1011, String(reason).slice(0, 123))
-    },
-  }
-}
-
-interface BrowserStub {
-  id: string
-  getPageInfo(): Promise<{ id: string; title: string; url: string; type: string }>
-  // Browser interaction
-  screenshot(selector?: string): Promise<{ data: string; width: number; height: number } | { error: string }>
-  click(selector: string): Promise<{ clicked: string; tag: string } | { error: string }>
-  fill(selector: string, value: string): Promise<{ filled: string; value: string } | { error: string }>
-  selectOption(selector: string, value: string): Promise<{ selected: string; value: string; text: string } | { error: string }>
-  hover(selector: string): Promise<{ hovered: string } | { error: string }>
-  pressKey(key: string, modifiers?: { ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean }, selector?: string): Promise<{ key: string; target: string } | { error: string }>
-  scroll(selector?: string, x?: number, y?: number): Promise<{ scrolledTo: string | { x: number; y: number } } | { error: string }>
-  getVisibleText(selector?: string): Promise<{ text: string; length: number } | { error: string }>
-
-  eval(expression: string): Promise<string>
-  queryDom(selector: string, options: {
-    max_depth?: number
-    attributes?: string[]
-    text_length?: number
-  }): Promise<{ html: string; element_count: number; truncated: boolean }>
+interface PendingCommand {
+  resolve: (result: any) => void
+  reject: (err: Error) => void
+  timer: ReturnType<typeof setTimeout>
 }
 
 interface BrowserConnection {
-  stub: RpcStub<BrowserStub>
+  ws: WsWebSocket
   browserId: string | null
-  serverId: string | null  // Which registered server this browser belongs to
+  serverId: string | null
   connectedAt: number
+  pending: Map<string, PendingCommand>
+  nextId: number
 }
 
 const browsers = new Map<string, BrowserConnection>()
@@ -110,19 +46,54 @@ export function emitLogEvent(data: { channel: string; payload: any; browserId?: 
   for (const cb of logEventListeners) cb(data)
 }
 
-/** Get the latest browser stub, optionally filtered by serverId */
-export function getBrowserStub(serverId?: string): RpcStub<BrowserStub> | undefined {
+/** Send a command to a browser and wait for the response */
+function sendCommand(conn: BrowserConnection, method: string, params?: any, timeoutMs = 30000): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (conn.ws.readyState !== 1 /* OPEN */) {
+      reject(new Error('Browser WebSocket not open'))
+      return
+    }
+
+    const id = String(++conn.nextId)
+    const timer = setTimeout(() => {
+      conn.pending.delete(id)
+      reject(new Error(`Command ${method} timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    conn.pending.set(id, { resolve, reject, timer })
+    conn.ws.send(JSON.stringify({ id, method, params }))
+  })
+}
+
+/** Get the latest browser connection, optionally filtered by serverId */
+function getBrowserConnection(serverId?: string): BrowserConnection | undefined {
   if (serverId) {
-    // Find latest browser for this specific server
     for (let i = connectionOrder.length - 1; i >= 0; i--) {
       const conn = browsers.get(connectionOrder[i])
-      if (conn?.serverId === serverId) return conn.stub
+      if (conn?.serverId === serverId) return conn
     }
     return undefined
   }
   if (connectionOrder.length === 0) return undefined
   const connId = connectionOrder[connectionOrder.length - 1]
-  return browsers.get(connId)?.stub
+  return browsers.get(connId)
+}
+
+/** Public API: send a command to a browser by serverId */
+export function browserCommand(serverId: string | undefined, method: string, params?: any, timeoutMs?: number): Promise<any> {
+  const conn = getBrowserConnection(serverId)
+  if (!conn) {
+    const all = getAllBrowsers()
+    const details = all.length > 0
+      ? ` (${all.length} browser(s) connected with servers: ${all.map(b => b.serverId ?? 'untagged').join(', ')})`
+      : ' (no browsers connected)'
+    return Promise.reject(new Error(
+      serverId
+        ? `No browser connected for server ${serverId}${details}`
+        : `No browser connected${details}`
+    ))
+  }
+  return sendCommand(conn, method, params, timeoutMs)
 }
 
 /** Disconnect and remove all browsers associated with a given serverId */
@@ -130,11 +101,16 @@ export function removeBrowsersByServer(serverId: string): number {
   let removed = 0
   for (const [connId, conn] of browsers) {
     if (conn.serverId === serverId) {
+      // Reject all pending commands
+      for (const [, pending] of conn.pending) {
+        clearTimeout(pending.timer)
+        pending.reject(new Error('Browser disconnected'))
+      }
+      conn.pending.clear()
+      conn.ws.close()
       browsers.delete(connId)
       const idx = connectionOrder.indexOf(connId)
       if (idx >= 0) connectionOrder.splice(idx, 1)
-      // Close the underlying WebSocket via the transport abort
-      try { (conn.stub as any)[Symbol.dispose]?.() } catch {}
       console.log(`[web-dev-mcp] Browser evicted (${connId}) — server ${serverId} removed`)
       for (const cb of browserEventListeners) cb('disconnect', { connId, browserId: conn.browserId, serverId })
       removed++
@@ -164,9 +140,8 @@ export function setupRpcWebSocket(httpServer: { on(event: string, listener: (...
     }
   })
 
-  wss.on('connection', async (ws, request: any) => {
+  wss.on('connection', (ws, request: any) => {
     const connId = Math.random().toString(36).slice(2)
-    const transport = createWsTransport(ws)
 
     // Parse server ID from query parameter (for hybrid mode)
     let serverId: string | null = null
@@ -176,190 +151,63 @@ export function setupRpcWebSocket(httpServer: { on(event: string, listener: (...
       serverId = decodeURIComponent(match[1])
     }
 
-    const session = new RpcSession<BrowserStub>(transport)
-    const stub = session.getRemoteMain()
-
     const conn: BrowserConnection = {
-      stub,
+      ws,
       browserId: null,
       serverId,
       connectedAt: Date.now(),
+      pending: new Map(),
+      nextId: 0,
     }
 
     browsers.set(connId, conn)
     connectionOrder.push(connId)
 
-    try {
-      conn.browserId = await stub.id
-    } catch {
-      // Browser may not support id property yet
-    }
+    // Handle responses from browser
+    ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data.toString())
+
+        // Response to a pending command
+        if (msg.id && conn.pending.has(msg.id)) {
+          const pending = conn.pending.get(msg.id)!
+          conn.pending.delete(msg.id)
+          clearTimeout(pending.timer)
+          if (msg.error) {
+            pending.reject(new Error(msg.error))
+          } else {
+            pending.resolve(msg.result)
+          }
+          return
+        }
+
+        // Unsolicited message from browser (e.g. browserId announcement)
+        if (msg.type === 'init' && msg.browserId) {
+          conn.browserId = msg.browserId
+        }
+      } catch {
+        // Ignore malformed messages
+      }
+    })
 
     const serverInfo = serverId ? ` for server ${serverId}` : ''
     console.log(`[web-dev-mcp] Browser connected (${connId})${serverInfo}`)
     for (const cb of browserEventListeners) cb('connect', { connId, browserId: conn.browserId, serverId })
 
     ws.on('close', () => {
+      // Reject all pending commands
+      for (const [, pending] of conn.pending) {
+        clearTimeout(pending.timer)
+        pending.reject(new Error('Browser disconnected'))
+      }
+      conn.pending.clear()
+
       const bid = conn.browserId
       browsers.delete(connId)
       const idx = connectionOrder.indexOf(connId)
       if (idx >= 0) connectionOrder.splice(idx, 1)
       console.log(`[web-dev-mcp] Browser disconnected (${connId})`)
       for (const cb of browserEventListeners) cb('disconnect', { connId, browserId: bid, serverId })
-    })
-  })
-
-  return wss
-}
-
-// --- Browser API (project-scoped browser interaction) ---
-
-function requireStub(serverId?: string): RpcStub<BrowserStub> {
-  const stub = getBrowserStub(serverId)
-  if (!stub) {
-    const connected = getAllBrowsers()
-    const details = connected.length > 0
-      ? ` (${connected.length} browser(s) connected with servers: ${connected.map(b => b.serverId ?? 'untagged').join(', ')})`
-      : ' (no browsers connected)'
-    throw new Error(
-      serverId
-        ? `No browser connected for server ${serverId}${details}`
-        : `No browser connected${details}`
-    )
-  }
-  return stub
-}
-
-export class ProjectBrowserApi extends RpcTarget {
-  private serverId?: string
-
-  constructor(serverId?: string) {
-    super()
-    this.serverId = serverId
-  }
-
-  get document() { return (requireStub(this.serverId) as any).document }
-  get window() { return (requireStub(this.serverId) as any).window }
-  get localStorage() { return (requireStub(this.serverId) as any).localStorage }
-  get sessionStorage() { return (requireStub(this.serverId) as any).sessionStorage }
-
-  navigate(url: string) { return (requireStub(this.serverId) as any).navigate(url) }
-  getPageMarkdown(selector?: string) { return (requireStub(this.serverId) as any).getPageMarkdown(selector) }
-  getVisibleText(selector?: string) { return (requireStub(this.serverId) as any).getVisibleText(selector) }
-  screenshot(selectorOrOpts?: string | Record<string, any>) { return (requireStub(this.serverId) as any).screenshot(selectorOrOpts) }
-  click(selector: string) { return (requireStub(this.serverId) as any).click(selector) }
-  fill(selector: string, value: string) { return (requireStub(this.serverId) as any).fill(selector, value) }
-  eval(expression: string): Promise<string> { return requireStub(this.serverId).eval(expression) }
-}
-
-// --- Gateway API (gateway-level operations) ---
-
-export class GatewayApi extends RpcTarget {
-  private registry?: ServerRegistry
-
-  constructor(registry?: ServerRegistry) {
-    super()
-    this.registry = registry
-  }
-
-  getBrowserCount() {
-    return browsers.size
-  }
-
-  getBrowserList() {
-    return getAllBrowsers()
-  }
-
-  listProjects() {
-    const serverIds = new Set<string>()
-    for (const conn of browsers.values()) {
-      if (conn.serverId) serverIds.add(conn.serverId)
-    }
-    return Array.from(serverIds)
-  }
-
-  /** Get a project-scoped browser handle */
-  getProject(serverId?: string): ProjectBrowserApi {
-    return new ProjectBrowserApi(serverId)
-  }
-
-  /** Read historical logs for a project from NDJSON files */
-  getProjectLogs(serverId: string, options?: { limit?: number; sinceId?: number; channels?: string[] }) {
-    if (!this.registry) return { entries: [] }
-    const server = this.registry.get(serverId)
-    if (!server) return { entries: [] }
-
-    const limit = Math.min(options?.limit ?? 200, 1000)
-    const sinceId = options?.sinceId ?? 0
-    const channels = options?.channels ?? ['console', 'server-console', 'dev-events']
-
-    const entries: Array<{ channel: string; id: number; ts: number; payload: any; browserId?: string }> = []
-    for (const channel of channels) {
-      const result = queryLogs(server.logPaths, { channel, sinceId, limit })
-      for (const event of result.events) {
-        entries.push({
-          channel,
-          id: event.id,
-          ts: event.ts,
-          payload: event.payload,
-          browserId: (event.payload as any)?.browserId,
-        })
-      }
-    }
-
-    // Sort by timestamp
-    entries.sort((a, b) => a.ts - b.ts)
-
-    // Trim to limit
-    if (entries.length > limit) entries.length = limit
-
-    return { entries }
-  }
-
-  subscribeEvents(browserId?: string) {
-    let unsubLog: (() => void) | null = null
-    let unsubBrowser: (() => void) | null = null
-
-    return new ReadableStream({
-      start(controller) {
-        unsubLog = onLogEvent((data) => {
-          if (browserId && data.browserId !== browserId) return
-          controller.enqueue({ type: 'log', ...data })
-        })
-        unsubBrowser = onBrowserEvent((event, data) => {
-          controller.enqueue({ type: event, ...data })
-        })
-      },
-      cancel() {
-        unsubLog?.()
-        unsubBrowser?.()
-      }
-    })
-  }
-}
-
-export function setupAgentRpcWebSocket(httpServer: { on(event: string, listener: (...args: any[]) => void): void }, agentPath: string, registry?: ServerRegistry) {
-  const wss = new WebSocketServer({ noServer: true })
-
-  httpServer.on('upgrade', (request: any, socket: any, head: any) => {
-    const url = request.url ?? ''
-    if (url === agentPath || url.startsWith(agentPath + '?')) {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit('connection', ws, request)
-      })
-    }
-  })
-
-  wss.on('connection', (ws) => {
-    const connId = Math.random().toString(36).slice(2)
-    const transport = createWsTransport(ws)
-    const api = new GatewayApi(registry)
-    const session = new RpcSession(transport, api)
-
-    console.log(`[web-dev-mcp] Agent connected (${connId})`)
-
-    ws.on('close', () => {
-      console.log(`[web-dev-mcp] Agent disconnected (${connId})`)
     })
   })
 

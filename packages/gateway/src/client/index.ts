@@ -3,7 +3,7 @@
 // Or loaded via Vite adapter with __WEB_DEV_MCP_ORIGIN__ set for cross-origin mode
 //
 // Patches console.*, error handlers, fetch/XHR
-// Sends events to gateway via WebSocket, connects RPC for eval/queryDom
+// Sends events to gateway via WebSocket, handles commands via JSON protocol
 
 ;(function() {
   if ((window as any).__WEB_DEV_MCP_LOADED__) return
@@ -181,525 +181,466 @@
     return XHRSend.call(this, body)
   }
 
-  // --- capnweb RPC (for eval/queryDom from server) ---
-  import('capnweb').then(({ RpcTarget, RpcSession }) => {
-    {
-      // browserId is hoisted to top of IIFE — shared with events WS
+  // --- Browser API (local, called by command handler) ---
 
-      class AnyTarget extends RpcTarget {
-        #target: any
-        #wrapCache = new WeakMap()
+  // Persistent state object — survives across eval calls within a session
+  const state: Record<string, any> = {}
 
-        constructor(target: any) {
-          super()
-          this.#target = target
-          return new Proxy(this, {
-            get: (_: any, prop: string) => {
-              if (prop === 'then') return undefined
-              if (prop === '__rpcTarget') return true
-              const val = this.#target[prop]
-              if (typeof val === 'function') {
-                return (...args: any[]) => {
-                  const result = val.apply(this.#target, args)
-                  return this.#wrap(result)
-                }
-              }
-              return this.#wrap(val)
-            },
-            set: (_: any, prop: string, value: any) => {
-              this.#target[prop] = value
-              if ((prop === 'value' || prop === 'checked') && this.#target.dispatchEvent) {
-                this.#target.dispatchEvent(new Event('input', { bubbles: true }))
-                this.#target.dispatchEvent(new Event('change', { bubbles: true }))
-              }
-              return true
-            }
-          })
-        }
-
-        #wrap(val: any): any {
-          if (val === null || val === undefined) return val
-          if (typeof val !== 'object' && typeof val !== 'function') return val
-          if (val.__rpcTarget) return val
-          if (this.#wrapCache.has(val)) return this.#wrapCache.get(val)
-          if (val instanceof Node) {
-            const wrapped = new AnyTarget(val)
-            this.#wrapCache.set(val, wrapped)
-            return wrapped
+  // Find element by CSS selector or "text=..." for text content search
+  function findElement(selector: string): HTMLElement | null {
+    if (selector.startsWith('text=')) {
+      const search = selector.slice(5)
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
+      let node: Node | null
+      while (node = walker.nextNode()) {
+        const el = node as HTMLElement
+        const directText = Array.from(el.childNodes)
+          .filter(n => n.nodeType === 3)
+          .map(n => (n.textContent || '').trim())
+          .join(' ')
+        if (directText && directText.includes(search)) return el
+      }
+      const walker2 = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
+      while (node = walker2.nextNode()) {
+        if ((node as HTMLElement).textContent?.includes(search)) {
+          const children = (node as HTMLElement).querySelectorAll('*')
+          for (let i = children.length - 1; i >= 0; i--) {
+            if (children[i].textContent?.trim().includes(search) &&
+                children[i].children.length === 0) return children[i] as HTMLElement
           }
-          if (val instanceof NodeList || val instanceof HTMLCollection) {
-            return Array.from(val).map(n => this.#wrap(n))
-          }
-          if (val instanceof Storage) {
-            const wrapped = new AnyTarget(val)
-            this.#wrapCache.set(val, wrapped)
-            return wrapped
-          }
-          if (val instanceof Location) {
-            return { href: val.href, protocol: val.protocol, host: val.host, hostname: val.hostname, port: val.port, pathname: val.pathname, search: val.search, hash: val.hash, origin: val.origin }
-          }
-          if (Array.isArray(val) || val.constructor === Object) return val
-          if (val instanceof DOMRect || val instanceof DOMRectReadOnly) {
-            return { top: val.top, left: val.left, width: val.width, height: val.height, bottom: val.bottom, right: val.right }
-          }
-          if (val instanceof CSSStyleDeclaration) {
-            const wrapped = new AnyTarget(val)
-            this.#wrapCache.set(val, wrapped)
-            return wrapped
-          }
-          try {
-            const wrapped = new AnyTarget(val)
-            this.#wrapCache.set(val, wrapped)
-            return wrapped
-          } catch {
-            return String(val)
-          }
+          return node as HTMLElement
         }
       }
-
-      class BrowserApi extends RpcTarget {
-        get id() { return browserId }
-
-        getPageInfo() {
-          return { id: browserId, title: document.title, url: window.location.href, type: 'page' }
-        }
-
-        get document() { return new AnyTarget(document) }
-        get window() { return new AnyTarget(window) }
-        get localStorage() { return new AnyTarget(localStorage) }
-        get sessionStorage() { return new AnyTarget(sessionStorage) }
-
-        eval(expression: string) {
-          const fn = new Function('return (' + expression + ')')
-          const raw = fn()
-          if (raw && typeof raw === 'object' && typeof raw.then === 'function') {
-            return raw.then((v: any) => typeof v === 'string' ? v : JSON.stringify(v))
-          }
-          return typeof raw === 'string' ? raw : JSON.stringify(raw)
-        }
-
-        queryDom(selector: string, options: any = {}) {
-          const { max_depth = 3, attributes = ['id', 'class', 'href', 'src', 'value', 'type', 'placeholder', 'role', 'aria-label'], text_length = 100 } = options
-          const root = selector ? document.querySelector(selector) : document.body
-          if (!root) return { html: '', element_count: 0, truncated: false, error: 'No element found' }
-
-          let elementCount = 0
-          function serializeNode(node: any, depth: number, indent: number): string {
-            if (depth > max_depth) return '\u2026'
-            if (node.nodeType === 3) {
-              const text = node.textContent.trim()
-              if (!text) return ''
-              return text.length > text_length ? text.slice(0, text_length) + '\u2026' : text
-            }
-            if (node.nodeType !== 1) return ''
-            const el = node
-            const tag = el.tagName.toLowerCase()
-            if (['script', 'style', 'svg', 'noscript', 'link', 'meta'].includes(tag)) return ''
-            elementCount++
-            const pad = '  '.repeat(indent)
-            let attrs = ''
-            for (const attr of attributes) {
-              const val = el.getAttribute(attr)
-              if (val !== null && val !== '') {
-                const displayVal = attr === 'class' && val.length > 80 ? val.slice(0, 80) + '\u2026' : val
-                attrs += ' ' + attr + '="' + displayVal.replace(/"/g, '&quot;') + '"'
-              }
-            }
-            if (['br', 'hr', 'img', 'input'].includes(tag)) return pad + '<' + tag + attrs + '/>'
-            const children = Array.from(el.childNodes)
-            const childStrings: string[] = []
-            for (const child of children) {
-              const s = serializeNode(child, depth + 1, indent + 1)
-              if (s) childStrings.push(s)
-            }
-            if (childStrings.length === 0) {
-              const text = el.textContent?.trim() ?? ''
-              const truncated = text.length > text_length ? text.slice(0, text_length) + '\u2026' : text
-              if (truncated) return pad + '<' + tag + attrs + '>' + truncated + '</' + tag + '>'
-              return pad + '<' + tag + attrs + '/>'
-            }
-            if (childStrings.length === 1 && !childStrings[0].includes('\n') && childStrings[0].length < 80) {
-              return pad + '<' + tag + attrs + '>' + childStrings[0].trim() + '</' + tag + '>'
-            }
-            return pad + '<' + tag + attrs + '>\n' + childStrings.join('\n') + '\n' + pad + '</' + tag + '>'
-          }
-
-          let html = serializeNode(root, 0, 0)
-          const truncated = html.length > 20480
-          if (truncated) html = html.slice(0, 20480) + '\n\u2026(truncated)'
-          return { html, element_count: elementCount, truncated }
-        }
-
-        // --- Browser interaction methods ---
-
-        async screenshot(selectorOrOpts?: string | {
-          selector?: string
-          preset?: 'viewport' | 'element' | 'full' | 'thumb' | 'hd'
-          format?: 'png' | 'jpeg'
-          quality?: number
-          scale?: number
-          maxWidth?: number
-        }) {
-          // Parse arguments
-          const opts = typeof selectorOrOpts === 'string'
-            ? { selector: selectorOrOpts }
-            : (selectorOrOpts || {})
-
-          const selector = opts.selector
-          const target = selector ? document.querySelector(selector) : document.documentElement
-          if (!target) return { error: 'Element not found: ' + selector }
-
-          // Canvas element — use native toDataURL (no library needed)
-          if (target instanceof HTMLCanvasElement) {
-            try {
-              const fmt = opts.format === 'png' ? 'image/png' : 'image/jpeg'
-              const data = target.toDataURL(fmt, opts.quality ? opts.quality / 100 : 0.8)
-              return { data, width: target.width, height: target.height }
-            } catch (err: any) {
-              return { error: 'Canvas screenshot failed: ' + err.message }
-            }
-          }
-
-          // Resolve preset defaults
-          const preset = opts.preset || (selector ? 'element' : 'viewport')
-          const presets: Record<string, { scale: number; format: string; quality: number; maxWidth: number; fullPage: boolean }> = {
-            viewport: { scale: 1, format: 'jpeg', quality: 80, maxWidth: 1024, fullPage: false },
-            element:  { scale: 1, format: 'jpeg', quality: 80, maxWidth: 1024, fullPage: false },
-            full:     { scale: 1, format: 'jpeg', quality: 80, maxWidth: 1024, fullPage: true },
-            thumb:    { scale: 1, format: 'jpeg', quality: 60, maxWidth: 512,  fullPage: false },
-            hd:       { scale: 1, format: 'png',  quality: 100, maxWidth: 1568, fullPage: false },
-          }
-          const p = presets[preset] || presets.viewport
-          const format = opts.format || p.format
-          const quality = opts.quality ?? p.quality
-          const scale = opts.scale ?? p.scale
-          const maxWidth = opts.maxWidth ?? p.maxWidth
-
-          // Load modern-screenshot (lazy, cached)
-          if (!(window as any).__modernScreenshot) {
-            try {
-              const libUrl = gatewayOrigin + '/__libs/modern-screenshot.js'
-              const mod = await import(/* @vite-ignore */ libUrl).catch(() =>
-                import(/* @vite-ignore */ 'https://esm.sh/modern-screenshot@4.6.8')
-              )
-              ;(window as any).__modernScreenshot = mod
-            } catch (err: any) {
-              return { error: 'Failed to load screenshot library: ' + err.message }
-            }
-          }
-
-          try {
-            const { domToPng, domToJpeg } = (window as any).__modernScreenshot
-            const render = format === 'png' ? domToPng : domToJpeg
-
-            // For viewport mode, clip to visible area
-            const renderOpts: any = { scale, quality: quality / 100 }
-            if (preset === 'viewport' || (preset !== 'full' && preset !== 'element')) {
-              renderOpts.height = window.innerHeight
-              renderOpts.style = { overflow: 'hidden' }
-            }
-
-            const dataUrl = await render(target, renderOpts)
-
-            // Resize if wider than maxWidth
-            const img = new Image()
-            await new Promise<void>((resolve, reject) => {
-              img.onload = () => resolve()
-              img.onerror = () => reject(new Error('Failed to decode screenshot'))
-              img.src = dataUrl
-            })
-
-            if (img.naturalWidth > maxWidth) {
-              const ratio = maxWidth / img.naturalWidth
-              const w = Math.round(img.naturalWidth * ratio)
-              const h = Math.round(img.naturalHeight * ratio)
-              const canvas = document.createElement('canvas')
-              canvas.width = w
-              canvas.height = h
-              const ctx = canvas.getContext('2d')!
-              ctx.drawImage(img, 0, 0, w, h)
-              const resized = canvas.toDataURL(format === 'png' ? 'image/png' : 'image/jpeg', quality / 100)
-              return { data: resized, width: w, height: h }
-            }
-
-            return { data: dataUrl, width: img.naturalWidth, height: img.naturalHeight }
-          } catch (err: any) {
-            return { error: 'Screenshot failed: ' + err.message }
-          }
-        }
-
-        // Find element by CSS selector or "text=..." for text content search
-        findElement(selector: string): HTMLElement | null {
-          if (selector.startsWith('text=')) {
-            const search = selector.slice(5)
-            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
-            let node: Node | null
-            while (node = walker.nextNode()) {
-              const el = node as HTMLElement
-              const directText = Array.from(el.childNodes)
-                .filter(n => n.nodeType === 3)
-                .map(n => (n.textContent || '').trim())
-                .join(' ')
-              if (directText && directText.includes(search)) return el
-            }
-            const walker2 = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
-            while (node = walker2.nextNode()) {
-              if ((node as HTMLElement).textContent?.includes(search)) {
-                const children = (node as HTMLElement).querySelectorAll('*')
-                for (let i = children.length - 1; i >= 0; i--) {
-                  if (children[i].textContent?.trim().includes(search) &&
-                      children[i].children.length === 0) return children[i] as HTMLElement
-                }
-                return node as HTMLElement
-              }
-            }
-            return null
-          }
-          return document.querySelector(selector) as HTMLElement | null
-        }
-
-        click(selector: string) {
-          const el = this.findElement(selector)
-          if (!el) return { error: 'Element not found: ' + selector }
-          el.click()
-          return { clicked: selector, tag: el.tagName.toLowerCase() }
-        }
-
-        fill(selector: string, value: string) {
-          const el = this.findElement(selector) as HTMLInputElement | HTMLTextAreaElement | null
-          if (!el) return { error: 'Element not found: ' + selector }
-          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-            HTMLInputElement.prototype, 'value'
-          )?.set || Object.getOwnPropertyDescriptor(
-            HTMLTextAreaElement.prototype, 'value'
-          )?.set
-          if (nativeInputValueSetter) {
-            nativeInputValueSetter.call(el, value)
-          } else {
-            el.value = value
-          }
-          el.dispatchEvent(new Event('input', { bubbles: true }))
-          el.dispatchEvent(new Event('change', { bubbles: true }))
-          return { filled: selector, value }
-        }
-
-        selectOption(selector: string, value: string) {
-          const el = this.findElement(selector) as HTMLSelectElement | null
-          if (!el || el.tagName !== 'SELECT') return { error: 'Select element not found: ' + selector }
-          const options = Array.from(el.options)
-          const option = options.find(o => o.value === value) || options.find(o => o.textContent?.trim() === value)
-          if (!option) return { error: 'Option not found: ' + value }
-          el.value = option.value
-          el.dispatchEvent(new Event('change', { bubbles: true }))
-          return { selected: selector, value: option.value, text: option.textContent?.trim() || '' }
-        }
-
-        hover(selector: string) {
-          const el = this.findElement(selector)
-          if (!el) return { error: 'Element not found: ' + selector }
-          el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
-          el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
-          return { hovered: selector }
-        }
-
-        pressKey(key: string, modifiers?: { ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean }, selector?: string) {
-          const target = selector ? document.querySelector(selector) : document.activeElement || document.body
-          if (selector && !target) return { error: 'Element not found: ' + selector }
-          const opts = {
-            key,
-            code: key.length === 1 ? 'Key' + key.toUpperCase() : key,
-            bubbles: true,
-            cancelable: true,
-            ctrlKey: modifiers?.ctrl || false,
-            shiftKey: modifiers?.shift || false,
-            altKey: modifiers?.alt || false,
-            metaKey: modifiers?.meta || false,
-          }
-          target!.dispatchEvent(new KeyboardEvent('keydown', opts))
-          target!.dispatchEvent(new KeyboardEvent('keypress', opts))
-          target!.dispatchEvent(new KeyboardEvent('keyup', opts))
-          return { key, target: selector || 'activeElement' }
-        }
-
-        scroll(selector?: string, x?: number, y?: number) {
-          if (selector) {
-            const el = document.querySelector(selector)
-            if (!el) return { error: 'Element not found: ' + selector }
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-            return { scrolledTo: selector }
-          }
-          window.scrollTo({ left: x || 0, top: y || 0, behavior: 'smooth' })
-          return { scrolledTo: { x: x || 0, y: y || 0 } }
-        }
-
-        navigate(url: string) {
-          window.location.href = url
-          return { navigated: url }
-        }
-
-        getVisibleText(selector?: string) {
-          const el = selector ? document.querySelector(selector) : document.body
-          if (!el) return { error: 'Element not found: ' + selector }
-          return { text: (el as HTMLElement).innerText, length: (el as HTMLElement).innerText.length }
-        }
-
-        getPageMarkdown(selector?: string) {
-          const root = selector ? document.querySelector(selector) : document.body
-          if (!root) return { error: 'Element not found: ' + selector }
-
-          const SKIP = new Set(['script', 'style', 'noscript', 'svg', 'link', 'meta', 'head'])
-          const BLOCK = new Set(['div', 'p', 'section', 'article', 'main', 'header', 'footer', 'nav',
-            'li', 'tr', 'td', 'th', 'blockquote', 'pre', 'figure', 'figcaption', 'details', 'summary'])
-
-          function walk(node: Node): string {
-            if (node.nodeType === 3) return node.textContent || ''
-            if (node.nodeType !== 1) return ''
-            const el = node as HTMLElement
-            const tag = el.tagName.toLowerCase()
-            if (SKIP.has(tag)) return ''
-            if (el.hidden || el.getAttribute('aria-hidden') === 'true') return ''
-            const style = window.getComputedStyle(el)
-            if (style.display === 'none' || style.visibility === 'hidden') return ''
-
-            let inner = ''
-            for (const child of el.childNodes) inner += walk(child)
-            inner = inner.replace(/\n{3,}/g, '\n\n')
-
-            if (tag === 'a') {
-              const href = el.getAttribute('href')
-              const text = inner.trim()
-              if (!text) return ''
-              if (href) return '[' + text + '](' + href + ')'
-              return text
-            }
-            if (tag === 'img') return '![' + (el.getAttribute('alt') || '') + '](' + (el.getAttribute('src') || '') + ')'
-            if (tag === 'br') return '\n'
-            if (tag === 'hr') return '\n---\n'
-            if (/^h[1-6]$/.test(tag)) return '\n' + '#'.repeat(parseInt(tag[1])) + ' ' + inner.trim() + '\n'
-            if (tag === 'li') {
-              const parent = el.parentElement?.tagName.toLowerCase()
-              const prefix = parent === 'ol' ? (Array.from(el.parentElement!.children).indexOf(el) + 1) + '. ' : '- '
-              return prefix + inner.trim() + '\n'
-            }
-            if (tag === 'pre') return '\n```\n' + el.textContent + '\n```\n'
-            if (tag === 'code') return '`' + inner.trim() + '`'
-            if (tag === 'strong' || tag === 'b') return '**' + inner.trim() + '**'
-            if (tag === 'em' || tag === 'i') return '*' + inner.trim() + '*'
-            if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') {
-              let desc = tag
-              if ((el as HTMLInputElement).type) desc += '[' + (el as HTMLInputElement).type + ']'
-              if ((el as HTMLInputElement).placeholder) desc += ' placeholder="' + (el as HTMLInputElement).placeholder + '"'
-              if ((el as HTMLInputElement).value) desc += ' value="' + (el as HTMLInputElement).value + '"'
-              if (el.id) desc += ' #' + el.id
-              if (tag === 'button') desc += ': ' + inner.trim()
-              return '<' + desc + '>'
-            }
-            if (BLOCK.has(tag)) return '\n' + inner + '\n'
-            return inner
-          }
-
-          let md = walk(root).replace(/\n{3,}/g, '\n\n').trim()
-          if (md.length > 30000) md = md.slice(0, 30000) + '\n\n...(truncated)'
-          return { markdown: md, length: md.length }
-        }
-      }
-
-      // Connect RPC to gateway (may be cross-origin)
-      let rpcUrl = gatewayWsProtocol + '//' + gatewayHost + '/__rpc'
-
-      // In hybrid mode, pass server ID so gateway knows which project this browser belongs to
-      if ((window as any).__WEB_DEV_MCP_SERVER__) {
-        rpcUrl += '?server=' + encodeURIComponent((window as any).__WEB_DEV_MCP_SERVER__)
-      }
-
-      const browserApi = new BrowserApi()
-      let rpcReconnectTimer: ReturnType<typeof setTimeout> | null = null
-
-      function createBrowserWsTransport(ws: WebSocket) {
-        const messageQueue: string[] = []
-        let resolveWaiter: ((msg: string) => void) | null = null
-        let rejectWaiter: ((err: Error) => void) | null = null
-
-        function deliver(msg: string) {
-          if (resolveWaiter) {
-            const resolve = resolveWaiter
-            resolveWaiter = null
-            rejectWaiter = null
-            resolve(msg)
-          } else {
-            messageQueue.push(msg)
-          }
-        }
-
-        ws.addEventListener('message', (e) => {
-          if (typeof e.data === 'string') {
-            deliver(e.data)
-          } else if (e.data instanceof Blob) {
-            e.data.text().then(deliver)
-          } else {
-            deliver(String(e.data))
-          }
-        })
-
-        ws.addEventListener('close', () => {
-          if (rejectWaiter) {
-            rejectWaiter(new Error('WebSocket closed'))
-            resolveWaiter = null
-            rejectWaiter = null
-          }
-        })
-
-        ws.addEventListener('error', () => {
-          if (rejectWaiter) {
-            rejectWaiter(new Error('WebSocket error'))
-            resolveWaiter = null
-            rejectWaiter = null
-          }
-        })
-
-        return {
-          send(message: string) {
-            ws.send(message)
-            return Promise.resolve()
-          },
-          receive() {
-            if (messageQueue.length > 0) {
-              return Promise.resolve(messageQueue.shift()!)
-            }
-            return new Promise<string>((resolve, reject) => {
-              resolveWaiter = resolve
-              rejectWaiter = reject
-            })
-          },
-        }
-      }
-
-      function connectRpc() {
-        const ws = new WebSocket(rpcUrl)
-
-        ws.onopen = () => {
-          const transport = createBrowserWsTransport(ws)
-          new RpcSession(transport, browserApi)
-          originalConsole.log('[web-dev-mcp] RPC connected:', rpcUrl)
-        }
-
-        ws.onclose = () => {
-          if (!rpcReconnectTimer) {
-            rpcReconnectTimer = setTimeout(() => {
-              rpcReconnectTimer = null
-              connectRpc()
-            }, 2000)
-          }
-        }
-
-        ws.onerror = () => {}
-      }
-
-      connectRpc()
+      return null
     }
-  }).catch((err: any) => {
-    originalConsole.warn('[web-dev-mcp] Could not load RPC modules:', err)
-  })
+    return document.querySelector(selector) as HTMLElement | null
+  }
+
+  // Browser helper object — available in eval context as `browser`
+  const browser = {
+    eval(expression: string) {
+      const fn = new Function('return (' + expression + ')')
+      const raw = fn()
+      if (raw && typeof raw === 'object' && typeof raw.then === 'function') {
+        return raw.then((v: any) => typeof v === 'string' ? v : JSON.stringify(v))
+      }
+      return typeof raw === 'string' ? raw : JSON.stringify(raw)
+    },
+
+    async elementSource(selector: string) {
+      const el = findElement(selector)
+      if (!el) return { error: 'Element not found: ' + selector }
+      if (typeof (window as any).__resolveElementInfo !== 'function') return { error: 'element-source not installed' }
+      try {
+        const info = await (window as any).__resolveElementInfo(el)
+        return info
+      } catch (err: any) {
+        return { error: err.message }
+      }
+    },
+
+    markdown(selector?: string) {
+      return commands.getPageMarkdown({ selector })
+    },
+
+    async screenshot(selectorOrOpts?: string | Record<string, any>) {
+      return commands.screenshot(typeof selectorOrOpts === 'string' ? { selector: selectorOrOpts } : selectorOrOpts)
+    },
+
+    navigate(url: string) {
+      return commands.navigate({ url })
+    },
+
+    click(selector: string) {
+      return commands.click({ selector })
+    },
+
+    fill(selector: string, value: string) {
+      return commands.fill({ selector, value })
+    },
+
+    async waitFor(selectorOrFn: string | Function, interval = 100, timeout = 5000) {
+      const deadline = Date.now() + timeout
+      while (Date.now() < deadline) {
+        try {
+          let result
+          if (typeof selectorOrFn === 'string') {
+            result = document.querySelector(selectorOrFn)
+          } else {
+            result = selectorOrFn()
+            if (result && typeof result.then === 'function') result = await result
+          }
+          if (result) return result
+        } catch {}
+        await new Promise(r => setTimeout(r, interval))
+      }
+      throw new Error(`waitFor timed out after ${timeout}ms`)
+    },
+  }
+
+  // Command implementations — each method handles one command from the gateway
+  const commands: Record<string, (params: any) => any> = {
+
+    getPageInfo() {
+      return { id: browserId, title: document.title, url: window.location.href, type: 'page' }
+    },
+
+    async eval(params: { code: string }) {
+      const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
+      const fn = new AsyncFunction('document', 'window', 'localStorage', 'sessionStorage', 'state', 'browser', params.code)
+      const result = await fn(document, window, localStorage, sessionStorage, state, browser)
+      if (typeof result === 'string') return result
+      if (result === undefined) return 'undefined'
+      if (result === null) return 'null'
+      // Handle DOM nodes — serialize to useful string
+      if (result instanceof Node) {
+        if (result instanceof HTMLElement) return result.outerHTML.slice(0, 2000)
+        return result.textContent?.slice(0, 2000) ?? ''
+      }
+      return JSON.stringify(result, null, 2)
+    },
+
+    queryDom(params: { selector?: string, max_depth?: number, attributes?: string[], text_length?: number }) {
+      const { max_depth = 3, attributes = ['id', 'class', 'href', 'src', 'value', 'type', 'placeholder', 'role', 'aria-label'], text_length = 100 } = params
+      const selector = params.selector || 'body'
+      const root = document.querySelector(selector) ?? document.body
+      if (!root) return { html: '', element_count: 0, truncated: false, error: 'No element found' }
+
+      let elementCount = 0
+      function serializeNode(node: any, depth: number, indent: number): string {
+        if (depth > max_depth) return '\u2026'
+        if (node.nodeType === 3) {
+          const text = node.textContent.trim()
+          if (!text) return ''
+          return text.length > text_length ? text.slice(0, text_length) + '\u2026' : text
+        }
+        if (node.nodeType !== 1) return ''
+        const el = node
+        const tag = el.tagName.toLowerCase()
+        if (['script', 'style', 'svg', 'noscript', 'link', 'meta'].includes(tag)) return ''
+        elementCount++
+        const pad = '  '.repeat(indent)
+        let attrs = ''
+        for (const attr of attributes) {
+          const val = el.getAttribute(attr)
+          if (val !== null && val !== '') {
+            const displayVal = attr === 'class' && val.length > 80 ? val.slice(0, 80) + '\u2026' : val
+            attrs += ' ' + attr + '="' + displayVal.replace(/"/g, '&quot;') + '"'
+          }
+        }
+        if (['br', 'hr', 'img', 'input'].includes(tag)) return pad + '<' + tag + attrs + '/>'
+        const children = Array.from(el.childNodes)
+        const childStrings: string[] = []
+        for (const child of children) {
+          const s = serializeNode(child, depth + 1, indent + 1)
+          if (s) childStrings.push(s)
+        }
+        if (childStrings.length === 0) {
+          const text = el.textContent?.trim() ?? ''
+          const truncated = text.length > text_length ? text.slice(0, text_length) + '\u2026' : text
+          if (truncated) return pad + '<' + tag + attrs + '>' + truncated + '</' + tag + '>'
+          return pad + '<' + tag + attrs + '/>'
+        }
+        if (childStrings.length === 1 && !childStrings[0].includes('\n') && childStrings[0].length < 80) {
+          return pad + '<' + tag + attrs + '>' + childStrings[0].trim() + '</' + tag + '>'
+        }
+        return pad + '<' + tag + attrs + '>\n' + childStrings.join('\n') + '\n' + pad + '</' + tag + '>'
+      }
+
+      let html = serializeNode(root, 0, 0)
+      const truncated = html.length > 20480
+      if (truncated) html = html.slice(0, 20480) + '\n\u2026(truncated)'
+      return { html, element_count: elementCount, truncated }
+    },
+
+    async screenshot(params: {
+      selector?: string
+      preset?: 'viewport' | 'element' | 'full' | 'thumb' | 'hd'
+      format?: 'png' | 'jpeg'
+      quality?: number
+      scale?: number
+      maxWidth?: number
+    } = {}) {
+      const selector = params.selector
+      const target = selector ? document.querySelector(selector) : document.documentElement
+      if (!target) return { error: 'Element not found: ' + selector }
+
+      // Canvas element — use native toDataURL
+      if (target instanceof HTMLCanvasElement) {
+        try {
+          const fmt = params.format === 'png' ? 'image/png' : 'image/jpeg'
+          const data = target.toDataURL(fmt, params.quality ? params.quality / 100 : 0.8)
+          return { data, width: target.width, height: target.height }
+        } catch (err: any) {
+          return { error: 'Canvas screenshot failed: ' + err.message }
+        }
+      }
+
+      // Resolve preset defaults
+      const preset = params.preset || (selector ? 'element' : 'viewport')
+      const presets: Record<string, { scale: number; format: string; quality: number; maxWidth: number; fullPage: boolean }> = {
+        viewport: { scale: 1, format: 'jpeg', quality: 80, maxWidth: 1024, fullPage: false },
+        element:  { scale: 1, format: 'jpeg', quality: 80, maxWidth: 1024, fullPage: false },
+        full:     { scale: 1, format: 'jpeg', quality: 80, maxWidth: 1024, fullPage: true },
+        thumb:    { scale: 1, format: 'jpeg', quality: 60, maxWidth: 512,  fullPage: false },
+        hd:       { scale: 1, format: 'png',  quality: 100, maxWidth: 1568, fullPage: false },
+      }
+      const p = presets[preset] || presets.viewport
+      const format = params.format || p.format
+      const quality = params.quality ?? p.quality
+      const scale = params.scale ?? p.scale
+      const maxWidth = params.maxWidth ?? p.maxWidth
+
+      // Load modern-screenshot (lazy, cached)
+      if (!(window as any).__modernScreenshot) {
+        try {
+          const libUrl = gatewayOrigin + '/__libs/modern-screenshot.js'
+          const mod = await import(/* @vite-ignore */ libUrl).catch(() =>
+            import(/* @vite-ignore */ 'https://esm.sh/modern-screenshot@4.6.8')
+          )
+          ;(window as any).__modernScreenshot = mod
+        } catch (err: any) {
+          return { error: 'Failed to load screenshot library: ' + err.message }
+        }
+      }
+
+      try {
+        const { domToPng, domToJpeg } = (window as any).__modernScreenshot
+        const render = format === 'png' ? domToPng : domToJpeg
+
+        const renderOpts: any = { scale, quality: quality / 100 }
+        if (preset === 'viewport' || (preset !== 'full' && preset !== 'element')) {
+          renderOpts.height = window.innerHeight
+          renderOpts.style = { overflow: 'hidden' }
+        }
+
+        const dataUrl = await render(target, renderOpts)
+
+        // Resize if wider than maxWidth
+        const img = new Image()
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve()
+          img.onerror = () => reject(new Error('Failed to decode screenshot'))
+          img.src = dataUrl
+        })
+
+        if (img.naturalWidth > maxWidth) {
+          const ratio = maxWidth / img.naturalWidth
+          const w = Math.round(img.naturalWidth * ratio)
+          const h = Math.round(img.naturalHeight * ratio)
+          const canvas = document.createElement('canvas')
+          canvas.width = w
+          canvas.height = h
+          const ctx = canvas.getContext('2d')!
+          ctx.drawImage(img, 0, 0, w, h)
+          const resized = canvas.toDataURL(format === 'png' ? 'image/png' : 'image/jpeg', quality / 100)
+          return { data: resized, width: w, height: h }
+        }
+
+        return { data: dataUrl, width: img.naturalWidth, height: img.naturalHeight }
+      } catch (err: any) {
+        return { error: 'Screenshot failed: ' + err.message }
+      }
+    },
+
+    click(params: { selector: string }) {
+      const el = findElement(params.selector)
+      if (!el) return { error: 'Element not found: ' + params.selector }
+      el.click()
+      return { clicked: params.selector, tag: el.tagName.toLowerCase() }
+    },
+
+    fill(params: { selector: string, value: string }) {
+      const el = findElement(params.selector) as HTMLInputElement | HTMLTextAreaElement | null
+      if (!el) return { error: 'Element not found: ' + params.selector }
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype, 'value'
+      )?.set || Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype, 'value'
+      )?.set
+      if (nativeInputValueSetter) {
+        nativeInputValueSetter.call(el, params.value)
+      } else {
+        el.value = params.value
+      }
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      return { filled: params.selector, value: params.value }
+    },
+
+    selectOption(params: { selector: string, value: string }) {
+      const el = findElement(params.selector) as HTMLSelectElement | null
+      if (!el || el.tagName !== 'SELECT') return { error: 'Select element not found: ' + params.selector }
+      const options = Array.from(el.options)
+      const option = options.find(o => o.value === params.value) || options.find(o => o.textContent?.trim() === params.value)
+      if (!option) return { error: 'Option not found: ' + params.value }
+      el.value = option.value
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+      return { selected: params.selector, value: option.value, text: option.textContent?.trim() || '' }
+    },
+
+    hover(params: { selector: string }) {
+      const el = findElement(params.selector)
+      if (!el) return { error: 'Element not found: ' + params.selector }
+      el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+      el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      return { hovered: params.selector }
+    },
+
+    pressKey(params: { key: string, modifiers?: { ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean }, selector?: string }) {
+      const target = params.selector ? document.querySelector(params.selector) : document.activeElement || document.body
+      if (params.selector && !target) return { error: 'Element not found: ' + params.selector }
+      const opts = {
+        key: params.key,
+        code: params.key.length === 1 ? 'Key' + params.key.toUpperCase() : params.key,
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: params.modifiers?.ctrl || false,
+        shiftKey: params.modifiers?.shift || false,
+        altKey: params.modifiers?.alt || false,
+        metaKey: params.modifiers?.meta || false,
+      }
+      target!.dispatchEvent(new KeyboardEvent('keydown', opts))
+      target!.dispatchEvent(new KeyboardEvent('keypress', opts))
+      target!.dispatchEvent(new KeyboardEvent('keyup', opts))
+      return { key: params.key, target: params.selector || 'activeElement' }
+    },
+
+    scroll(params: { selector?: string, x?: number, y?: number }) {
+      if (params.selector) {
+        const el = document.querySelector(params.selector)
+        if (!el) return { error: 'Element not found: ' + params.selector }
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        return { scrolledTo: params.selector }
+      }
+      window.scrollTo({ left: params.x || 0, top: params.y || 0, behavior: 'smooth' })
+      return { scrolledTo: { x: params.x || 0, y: params.y || 0 } }
+    },
+
+    navigate(params: { url: string }) {
+      window.location.href = params.url
+      return { navigated: params.url }
+    },
+
+    getVisibleText(params: { selector?: string }) {
+      const el = params.selector ? document.querySelector(params.selector) : document.body
+      if (!el) return { error: 'Element not found: ' + params.selector }
+      return { text: (el as HTMLElement).innerText, length: (el as HTMLElement).innerText.length }
+    },
+
+    getPageMarkdown(params: { selector?: string }) {
+      const root = params.selector ? document.querySelector(params.selector) : document.body
+      if (!root) return { error: 'Element not found: ' + params.selector }
+
+      const SKIP = new Set(['script', 'style', 'noscript', 'svg', 'link', 'meta', 'head'])
+      const BLOCK = new Set(['div', 'p', 'section', 'article', 'main', 'header', 'footer', 'nav',
+        'li', 'tr', 'td', 'th', 'blockquote', 'pre', 'figure', 'figcaption', 'details', 'summary'])
+
+      function walk(node: Node): string {
+        if (node.nodeType === 3) return node.textContent || ''
+        if (node.nodeType !== 1) return ''
+        const el = node as HTMLElement
+        const tag = el.tagName.toLowerCase()
+        if (SKIP.has(tag)) return ''
+        if (el.hidden || el.getAttribute('aria-hidden') === 'true') return ''
+        const style = window.getComputedStyle(el)
+        if (style.display === 'none' || style.visibility === 'hidden') return ''
+
+        let inner = ''
+        for (const child of el.childNodes) inner += walk(child)
+        inner = inner.replace(/\n{3,}/g, '\n\n')
+
+        if (tag === 'a') {
+          const href = el.getAttribute('href')
+          const text = inner.trim()
+          if (!text) return ''
+          if (href) return '[' + text + '](' + href + ')'
+          return text
+        }
+        if (tag === 'img') return '![' + (el.getAttribute('alt') || '') + '](' + (el.getAttribute('src') || '') + ')'
+        if (tag === 'br') return '\n'
+        if (tag === 'hr') return '\n---\n'
+        if (/^h[1-6]$/.test(tag)) return '\n' + '#'.repeat(parseInt(tag[1])) + ' ' + inner.trim() + '\n'
+        if (tag === 'li') {
+          const parent = el.parentElement?.tagName.toLowerCase()
+          const prefix = parent === 'ol' ? (Array.from(el.parentElement!.children).indexOf(el) + 1) + '. ' : '- '
+          return prefix + inner.trim() + '\n'
+        }
+        if (tag === 'pre') return '\n```\n' + el.textContent + '\n```\n'
+        if (tag === 'code') return '`' + inner.trim() + '`'
+        if (tag === 'strong' || tag === 'b') return '**' + inner.trim() + '**'
+        if (tag === 'em' || tag === 'i') return '*' + inner.trim() + '*'
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') {
+          let desc = tag
+          if ((el as HTMLInputElement).type) desc += '[' + (el as HTMLInputElement).type + ']'
+          if ((el as HTMLInputElement).placeholder) desc += ' placeholder="' + (el as HTMLInputElement).placeholder + '"'
+          if ((el as HTMLInputElement).value) desc += ' value="' + (el as HTMLInputElement).value + '"'
+          if (el.id) desc += ' #' + el.id
+          if (tag === 'button') desc += ': ' + inner.trim()
+          return '<' + desc + '>'
+        }
+        if (BLOCK.has(tag)) return '\n' + inner + '\n'
+        return inner
+      }
+
+      let md = walk(root).replace(/\n{3,}/g, '\n\n').trim()
+      if (md.length > 30000) md = md.slice(0, 30000) + '\n\n...(truncated)'
+      return { markdown: md, length: md.length }
+    },
+  }
+
+  // --- Command WebSocket (gateway → browser, browser → gateway) ---
+  let cmdWs: WebSocket | null = null
+  let cmdReconnectTimer: ReturnType<typeof setTimeout> | null = null
+
+  function connectCmd() {
+    let url = gatewayWsProtocol + '//' + gatewayHost + '/__rpc'
+    if (serverId) url += '?server=' + encodeURIComponent(serverId)
+
+    cmdWs = new WebSocket(url)
+
+    cmdWs.onopen = () => {
+      // Announce browser ID
+      cmdWs!.send(JSON.stringify({ type: 'init', browserId }))
+      originalConsole.log('[web-dev-mcp] Command channel connected')
+    }
+
+    cmdWs.onmessage = async (event) => {
+      try {
+        const msg = JSON.parse(event.data)
+        if (!msg.id || !msg.method) return
+
+        const handler = commands[msg.method]
+        if (!handler) {
+          cmdWs!.send(JSON.stringify({ id: msg.id, error: 'Unknown method: ' + msg.method }))
+          return
+        }
+
+        try {
+          const result = await handler(msg.params || {})
+          cmdWs!.send(JSON.stringify({ id: msg.id, result }))
+        } catch (err: any) {
+          cmdWs!.send(JSON.stringify({ id: msg.id, error: err.message ?? String(err) }))
+        }
+      } catch {
+        // Ignore malformed messages
+      }
+    }
+
+    cmdWs.onclose = () => {
+      cmdWs = null
+      if (!cmdReconnectTimer) {
+        cmdReconnectTimer = setTimeout(() => {
+          cmdReconnectTimer = null
+          connectCmd()
+        }, 2000)
+      }
+    }
+
+    cmdWs.onerror = () => {}
+  }
+
+  connectCmd()
 
   originalConsole.log('[web-dev-mcp] Client loaded')
 

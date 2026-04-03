@@ -14,8 +14,7 @@ import { NetworkWriter } from './writers/network.js'
 import { DevEventsWriter, type BuildEventPayload } from './writers/dev-events.js'
 import { ServerConsoleWriter } from './writers/server-console.js'
 import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './mcp-server.js'
-import { nodeHttpBatchRpcResponse } from 'capnweb'
-import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi, onBrowserEvent, emitLogEvent, removeBrowsersByServer } from './rpc-server.js'
+import { setupRpcWebSocket, onBrowserEvent, emitLogEvent, removeBrowsersByServer } from './rpc-server.js'
 import { handleAdmin } from './admin.js'
 import { autoRegister } from './auto-register.js'
 import { ServerRegistry, type RegisteredServer, makeServerId, makeProjectId, initProjectLogDir } from './registry.js'
@@ -326,19 +325,6 @@ export async function startGateway(options: GatewayOptions) {
       return
     }
 
-    // capnweb HTTP batch endpoint — stateless per request
-    if (url === '/__rpc/batch') {
-      nodeHttpBatchRpcResponse(req, res, new GatewayApi(registry), {
-        headers: { 'Access-Control-Allow-Origin': '*' },
-      }).catch((err: any) => {
-        if (!res.headersSent) {
-          res.writeHead(500, { 'Content-Type': 'text/plain' })
-          res.end(`Batch RPC error: ${err.message}`)
-        }
-      })
-      return
-    }
-
     // Admin UI
     if (handleAdmin(req, res, url, { startedAt: session.startedAt, registry, port })) return
 
@@ -396,9 +382,8 @@ export async function startGateway(options: GatewayOptions) {
   // Setup dev-events WebSocket (adapters → server for HMR/build events)
   const devEventsWss = new WebSocketServer({ noServer: true })
 
-  // Setup RPC WebSocket (capnweb for eval/queryDom)
+  // Setup command WebSocket (browser ↔ gateway JSON protocol)
   setupRpcWebSocket(server, '/__rpc')
-  setupAgentRpcWebSocket(server, '/__rpc/agent', registry)
 
   // Broadcast browser connect/disconnect to admin SSE
   onBrowserEvent((event, data) => {
@@ -417,8 +402,8 @@ export async function startGateway(options: GatewayOptions) {
       devEventsWss.handleUpgrade(request, socket, head, (ws) => {
         devEventsWss.emit('connection', ws, request)
       })
-    } else if (url === '/__rpc' || url.startsWith('/__rpc?') || url.startsWith('/__rpc/agent')) {
-      // Handled by setupRpcWebSocket / setupAgentRpcWebSocket upgrade listeners
+    } else if (url === '/__rpc' || url.startsWith('/__rpc?')) {
+      // Handled by setupRpcWebSocket upgrade listener
     } else {
       socket.destroy()
     }
@@ -459,7 +444,7 @@ export async function startGateway(options: GatewayOptions) {
           w.network.write(payload)
         }
 
-        // Push to admin SSE clients + capnweb stream subscribers
+        // Push to admin SSE clients + stream subscribers
         broadcastToAdmin('log', { channel, payload, browserId })
         emitLogEvent({ channel, payload, browserId })
       } catch {

@@ -49,25 +49,25 @@ clear                                        # truncate all log channels
 clear({ channels: ["console"] })             # truncate specific channel
 ```
 
-### `eval_js_rpc`
+### `eval_js`
 
-Runs JavaScript on the server with `document` and `window` as live capnweb remote proxies to the browser. Each DOM call is an RPC round-trip. CSP-safe, multi-statement, supports await.
+Runs JavaScript directly in the browser. Full DOM access, multi-statement, supports await.
 
 **Globals available in code:**
 
 | Name | What it is |
 |---|---|
-| `document` | Remote DOM proxy. querySelector, textContent, click, etc. |
-| `window` | Remote window proxy. location, localStorage, etc. |
-| `state` | Persists across calls. Store capnweb refs to runtime objects (stores, globals). |
-| `browser.eval(expression)` | Run JS directly in browser (access framework internals, closures). |
+| `document` | Real browser document. querySelector, textContent, etc. |
+| `window` | Real browser window. location, localStorage, etc. |
+| `state` | Persists across calls within a browser session. Store refs to DOM elements, framework stores, etc. |
+| `browser.eval(expression)` | Eval a JS expression and return its string result. |
 | `browser.markdown(selector?)` | Element/page to markdown with `[links](urls)` |
 | `browser.screenshot(selectorOrOpts?)` | Screenshot. String=selector, or `{preset, format, quality}`. Presets: viewport (default), element, thumb, full, hd. |
 | `browser.elementSource(selector)` | Map DOM element to source code. Returns `{componentName, source: {filePath, lineNumber}}`. Requires `element-source` in the app. |
-| `browser.navigate(url)` | Change page (disconnects RPC, wait before next call) |
+| `browser.navigate(url)` | Change page (disconnects, wait before next call) |
 | `browser.click(selector)` | Click. Supports `text=` prefix for text matching. |
 | `browser.fill(selector, value)` | Fill input. Supports `text=` prefix. |
-| `browser.waitFor(fnOrSelector, interval?, timeout?)` | Poll until element exists or function returns truthy |
+| `browser.waitFor(selectorOrFn, interval?, timeout?)` | Poll until element exists or function returns truthy |
 
 ## Workflow: test-fix loop
 
@@ -76,7 +76,7 @@ clear
 # make code change — HMR reloads
 get_diagnostics({ since_checkpoint: true })
 # check errors, then visual:
-eval_js_rpc: return await browser.screenshot()
+eval_js: return await browser.screenshot()
 ```
 
 ## Examples
@@ -84,13 +84,13 @@ eval_js_rpc: return await browser.screenshot()
 **Read page content:**
 ```js
 // as markdown (links, headings, form elements)
-return await browser.markdown('#main-content')
+return browser.markdown('#main-content')
 
 // as plain text
-return await document.querySelector('#main-content').innerText
+return document.querySelector('#main-content').innerText
 
 // as HTML structure
-return await document.querySelector('#main-content').innerHTML
+return document.querySelector('#main-content').innerHTML
 ```
 
 **Find source code for an element by its text:**
@@ -109,39 +109,38 @@ const info2 = await browser.elementSource('.price-widget .total')
 
 **Click by text:**
 ```js
-await browser.click('text=Submit')
+browser.click('text=Submit')
 ```
 
 **Fill a form:**
 ```js
-await browser.fill('#email', 'test@example.com')
-await browser.fill('#password', 'secret')
-await browser.click('text=Sign In')
+browser.fill('#email', 'test@example.com')
+browser.fill('#password', 'secret')
+browser.click('text=Sign In')
 ```
 
 **Wait for async UI:**
 ```js
 await browser.click('text=Load Data')
 const toast = await browser.waitFor('.success-toast', 100, 5000)
-return await toast.textContent
+return toast.textContent
 ```
 
 **DOM traversal chain:**
 ```js
 const link = document.querySelector('a[href*="doom"]')
 const row = link.closest('tr').nextElementSibling
-const href = await row.querySelector('a:last-child').href
-return href
+return row.querySelector('a:last-child').href
 ```
 
 **Hold a ref across calls (stores, globals):**
 ```js
 // Call 1: store a ref
 state.store = window.__REDUX_STORE__
-return await state.store.getState()
+return JSON.stringify(state.store.getState())
 
 // Call 2 (later): same ref, still alive
-return await state.store.getState()
+return JSON.stringify(state.store.getState())
 ```
 
 ## Monitoring logs
@@ -165,9 +164,8 @@ Streams `event: log`, `event: browser_connect`, `event: browser_disconnect`.
 
 ## Gotchas
 
-- `browser.navigate()` disconnects RPC — wait ~2-3s before next call. For SPA route changes, prefer `browser.click('text=Settings')` on a nav element.
+- `browser.navigate()` disconnects — wait ~2-3s before next call. For SPA route changes, prefer `browser.click('text=Settings')` on a nav element.
 - `browser.screenshot()` returns JSON with base64 data, not MCP image content type.
-
-For direct capnweb access (persistent WebSocket refs, HTTP batch, import IDs), see the `capnweb-browser` skill.
+- `state` persists within a browser session. Page reload clears it. Store refs that survive HMR, but re-query after full navigation.
 
 See [RECIPES.md](RECIPES.md) for more patterns.

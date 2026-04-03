@@ -20,11 +20,6 @@
       "import": "./dist/adapter-helpers.js",
       "default": "./dist/adapter-helpers.js"
     },
-    "./agent": {
-      "types": "./dist/agent-client.d.ts",
-      "import": "./dist/agent-client.js",
-      "default": "./dist/agent-client.js"
-    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -56,8 +51,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.0",
-    "capnweb": "^0.6.1",
-    "element-source": "^0.0.5",
+"element-source": "^0.0.5",
     "modern-screenshot": "^4.6.8",
     "ws": "^8.20.0",
     "zod": "^4.0.0"

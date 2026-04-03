@@ -54,7 +54,7 @@ query_dom({ selector: '#settings-page' })
 
 ```
 navigate("http://localhost:3000/login")
-# wait ~2-3 seconds for page load and RPC reconnect
+# wait ~2-3 seconds for page load and reconnect
 get_visible_text('h1')          # verify new page
 ```
 
@@ -88,49 +88,39 @@ navigate("https://news.ycombinator.com/item?id=47490705")
 get_page_markdown()
 ```
 
-## capnweb Agent Client (advanced)
+## eval_js (advanced)
 
-For complex flows — multi-page browsing, DOM traversal chains, programmatic reconnection after navigation. Connect via WebSocket at `ws://localhost:3333/__rpc/agent`.
+For complex flows within a single eval call — DOM traversal, async operations, state management.
 
-MCP tools are simpler but limited to one action per call. capnweb gives you the live DOM with promise pipelining.
-
-### Connect and read
+### Multi-step DOM exploration
 
 ```js
-import { connect } from 'web-dev-mcp-gateway/agent'
-
-const browser = await connect('ws://localhost:3333/__rpc/agent')
-const { document } = browser
-
-const title = await document.querySelector('h1').textContent
-const items = document.querySelectorAll('li')
-const first = await items[0].textContent
+// Find all links in a table, extract data
+const rows = document.querySelectorAll('table tr')
+const data = []
+for (const row of rows) {
+  const link = row.querySelector('a')
+  if (link) data.push({ text: link.textContent, href: link.href })
+}
+return JSON.stringify(data)
 ```
 
-### Chain DOM traversal
+### Store framework state across calls
 
 ```js
-// Pipelined — these don't need individual awaits
-const link = document.querySelector('a[href*="doom"]')
-const commentsRow = link.closest('tr').nextElementSibling
-const href = await commentsRow.querySelector('.subline a:last-child').href
+// Call 1: grab a store reference
+state.store = window.__REDUX_STORE__
+return JSON.stringify(state.store.getState())
+
+// Call 2 (later): same ref
+state.store.dispatch({ type: 'INCREMENT' })
+return JSON.stringify(state.store.getState())
 ```
 
-### Navigate and reconnect
+### Screenshot after interaction
 
 ```js
-await browser.navigate(href)
-browser.close()
-await new Promise(r => setTimeout(r, 3000))
-
-const page2 = await connect('ws://localhost:3333/__rpc/agent')
-console.log(await page2.document.title)
-page2.close()
-```
-
-### Get markdown from a specific element
-
-```js
-const result = await browser.getPageMarkdown('.article-body')
-console.log(result.markdown)
+browser.click('text=Open Modal')
+await browser.waitFor('.modal-content', 100, 3000)
+return await browser.screenshot('.modal-content')
 ```

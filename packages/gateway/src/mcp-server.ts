@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { SessionState } from './session.js'
 import type { DevEventsWriter } from './writers/dev-events.js'
 import type { ServerRegistry } from './registry.js'
-import { registerCoreTools, sessionStates } from './mcp-tools-core.js'
+import { registerCoreTools } from './mcp-tools-core.js'
 import { registerFullTools } from './mcp-tools-full.js'
 import { registerElementGrabTool } from './element-grab.js'
 
@@ -111,7 +111,6 @@ export function createMcpMiddleware(
 
       transport.onclose = () => {
         connections.delete(transport.sessionId)
-        sessionStates.delete(transport.sessionId)
         ctx.connectedClients = Math.max(0, ctx.connectedClients - 1)
       }
 
