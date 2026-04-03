@@ -240,7 +240,7 @@ export function registerCoreTools(mcp: McpServer, ctx: McpContext) {
     'eval_js',
     'Run JavaScript in the browser with full DOM access. Multi-statement, supports await. Persistent `state` object survives across calls. `browser.*` helpers for common operations.',
     {
-      code: z.string().describe('JavaScript code to run in browser. Globals: `document`, `window`, `localStorage`, `sessionStorage` (real browser objects), `state` (persists across calls), `browser` (helpers: .markdown(sel?), .screenshot(sel?), .navigate(url), .click(sel), .fill(sel, val), .waitFor(selectorOrFn, interval?, timeout?), .eval(expr), .elementSource(sel)).'),
+      code: z.union([z.string(), z.array(z.string())]).describe('JavaScript code to run in browser. String for single eval, array of strings for auto-waited pipeline (DOM settles between steps). Promises are auto-awaited. Globals: `document`, `window`, `localStorage`, `sessionStorage` (real browser objects), `state` (persists across calls), `browser` (helpers: .markdown(sel?), .screenshot(sel?), .navigate(url), .click(sel), .fill(sel, val), .waitFor(selectorOrFn, interval?, timeout?), .eval(expr), .elementSource(sel)).'),
       project: z.string().optional().describe('Project short ID or directory (overrides session default)'),
     },
     async (args) => {

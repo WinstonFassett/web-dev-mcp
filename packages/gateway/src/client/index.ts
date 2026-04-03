@@ -285,19 +285,64 @@
       return { id: browserId, title: document.title, url: window.location.href, type: 'page' }
     },
 
-    async eval(params: { code: string }) {
+    async eval(params: { code: string | string[] }) {
       const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
-      const fn = new AsyncFunction('document', 'window', 'localStorage', 'sessionStorage', 'state', 'browser', params.code)
-      const result = await fn(document, window, localStorage, sessionStorage, state, browser)
-      if (typeof result === 'string') return result
-      if (result === undefined) return 'undefined'
-      if (result === null) return 'null'
-      // Handle DOM nodes — serialize to useful string
-      if (result instanceof Node) {
-        if (result instanceof HTMLElement) return result.outerHTML.slice(0, 2000)
-        return result.textContent?.slice(0, 2000) ?? ''
+      const globals = [document, window, localStorage, sessionStorage, state, browser]
+      const globalNames = ['document', 'window', 'localStorage', 'sessionStorage', 'state', 'browser']
+
+      function serialize(result: any): string {
+        if (typeof result === 'string') return result
+        if (result === undefined) return 'undefined'
+        if (result === null) return 'null'
+        if (result instanceof Node) {
+          if (result instanceof HTMLElement) return result.outerHTML.slice(0, 2000)
+          return result.textContent?.slice(0, 2000) ?? ''
+        }
+        return JSON.stringify(result, null, 2)
       }
-      return JSON.stringify(result, null, 2)
+
+      async function autoAwait(val: any): Promise<any> {
+        if (val && typeof val === 'object' && typeof val.then === 'function') {
+          return await val
+        }
+        return val
+      }
+
+      // Wait for DOM to settle: no mutations for `quiet` ms, with a max wait
+      function waitForDomSettle(quiet = 150, maxWait = 3000): Promise<void> {
+        return new Promise(resolve => {
+          let timer: any = null
+          const deadline = setTimeout(() => { cleanup(); resolve() }, maxWait)
+          const observer = new MutationObserver(() => {
+            if (timer) clearTimeout(timer)
+            timer = setTimeout(() => { cleanup(); resolve() }, quiet)
+          })
+          observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true })
+          // If DOM is already quiet, resolve after `quiet` ms
+          timer = setTimeout(() => { cleanup(); resolve() }, quiet)
+          function cleanup() {
+            observer.disconnect()
+            clearTimeout(deadline)
+            if (timer) clearTimeout(timer)
+          }
+        })
+      }
+
+      const steps = Array.isArray(params.code) ? params.code : [params.code]
+
+      let result: any
+      for (let i = 0; i < steps.length; i++) {
+        const fn = new AsyncFunction(...globalNames, steps[i])
+        result = await autoAwait(await fn(...globals))
+
+        // Between steps (not after last): wait for DOM to settle
+        // If result is null/undefined and next step exists, retry current step
+        if (i < steps.length - 1) {
+          await waitForDomSettle()
+        }
+      }
+
+      return serialize(result)
     },
 
     queryDom(params: { selector?: string, max_depth?: number, attributes?: string[], text_length?: number }) {
