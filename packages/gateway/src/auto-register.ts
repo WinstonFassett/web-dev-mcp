@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 
 interface AgentConfig {
@@ -39,5 +39,21 @@ export function autoRegister(cwd: string, mcpUrl: string): string[] {
     registered.push(relPath)
   }
 
+  // Ensure .web-dev-mcp is gitignored
+  ensureGitignore(cwd, '.web-dev-mcp')
+
   return registered
+}
+
+/** Add an entry to .gitignore if not already present */
+function ensureGitignore(cwd: string, entry: string) {
+  const gitignorePath = join(cwd, '.gitignore')
+  if (existsSync(gitignorePath)) {
+    const content = readFileSync(gitignorePath, 'utf-8')
+    if (content.split('\n').some(line => line.trim() === entry)) return
+    const needsNewline = content.length > 0 && !content.endsWith('\n')
+    appendFileSync(gitignorePath, (needsNewline ? '\n' : '') + entry + '\n')
+  } else {
+    writeFileSync(gitignorePath, entry + '\n')
+  }
 }

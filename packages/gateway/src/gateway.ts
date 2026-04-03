@@ -17,7 +17,6 @@ import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './m
 import { nodeHttpBatchRpcResponse } from 'capnweb'
 import { setupRpcWebSocket, setupAgentRpcWebSocket, GatewayApi, onBrowserEvent, emitLogEvent, removeBrowsersByServer } from './rpc-server.js'
 import { handleAdmin } from './admin.js'
-import { autoRegister } from './auto-register.js'
 import { ServerRegistry, type RegisteredServer, makeServerId, makeProjectId, initProjectLogDir } from './registry.js'
 import { handleElementGrabRequest } from './element-grab.js'
 
@@ -498,13 +497,6 @@ export async function startGateway(options: GatewayOptions) {
     })
   })
 
-  // Auto-register
-  if (options.autoRegister) {
-    const registered = autoRegister(process.cwd(), session.info.mcpUrl)
-    for (const path of registered) {
-      console.log(`  Auto-registered: ${path}`)
-    }
-  }
 
   server.listen(port, () => {
     const proto = useHttps ? 'https' : 'http'
