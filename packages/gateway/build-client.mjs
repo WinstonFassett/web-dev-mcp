@@ -7,10 +7,10 @@ await build({
   format: 'iife',
   platform: 'browser',
   target: 'es2022',
-  outfile: 'dist/client.js',
+  outfile: 'dist/web-dev-mcp-client.js',
   minify: true,
 })
-console.log('Client bundle built → dist/client.js')
+console.log('Client bundle built → dist/web-dev-mcp-client.js')
 
 // Build modern-screenshot as a standalone ESM module for lazy loading
 // Served at /__libs/modern-screenshot.js, preloaded on idle

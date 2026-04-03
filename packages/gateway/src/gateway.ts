@@ -70,9 +70,9 @@ export async function startGateway(options: GatewayOptions) {
   // Load bundled client script
   let clientScript: string
   try {
-    clientScript = readFileSync(join(__dirname, 'client.js'), 'utf-8')
+    clientScript = readFileSync(join(__dirname, 'web-dev-mcp-client.js'), 'utf-8')
   } catch {
-    console.error('[web-dev-mcp] Could not load client.js bundle. Run `npm run build` first.')
+    console.error('[web-dev-mcp] Could not load web-dev-mcp-client.js bundle. Run `npm run build` first.')
     process.exit(1)
   }
 
@@ -153,7 +153,7 @@ export async function startGateway(options: GatewayOptions) {
     }
 
     // Serve client script
-    if (url === '/__client.js') {
+    if (url === '/__web-dev-mcp.js' || url === '/__client.js') {
       addCorsHeaders(res)
       res.writeHead(200, {
         'Content-Type': 'application/javascript',

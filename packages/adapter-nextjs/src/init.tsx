@@ -24,7 +24,7 @@ export function WebDevMcpInit() {
     }
 
     const script = document.createElement('script')
-    script.src = '/__client.js'
+    script.src = '/__web-dev-mcp.js'
     script.async = true
     document.head.appendChild(script)
   }, [])

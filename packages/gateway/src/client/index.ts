@@ -1,5 +1,5 @@
 // Browser client for web-dev-mcp gateway
-// Injected into proxied HTML pages via <script src="/__client.js">
+// Injected into proxied HTML pages via <script src="/__web-dev-mcp.js">
 // Or loaded via Vite adapter with __WEB_DEV_MCP_ORIGIN__ set for cross-origin mode
 //
 // Patches console.*, error handlers, fetch/XHR
