@@ -2,6 +2,8 @@
 // These are registered in addition to core tools when ?tools=full is set.
 
 import { z } from 'zod'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { McpContext } from './mcp-server.js'
 import { getLogPaths, resolveProject } from './mcp-tools-core.js'
@@ -178,12 +180,14 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
 
   mcp.tool(
     'screenshot',
-    'Take a screenshot. Presets: viewport (default), element, full, thumb, hd. Default is JPEG 80 quality, max 1024px wide.',
+    'Take a screenshot. Saves to .web-dev-mcp/screenshots/ and returns file path (use inline:true for base64). Presets: viewport (default), element, full, thumb, hd.',
     {
       selector: z.string().optional().describe('CSS selector. Omit for viewport.'),
       preset: z.enum(['viewport', 'element', 'full', 'thumb', 'hd']).optional().describe('Screenshot preset. Default: viewport (or element if selector given).'),
       format: z.enum(['png', 'jpeg']).optional().describe('Image format. Default: jpeg.'),
       quality: z.number().optional().describe('JPEG quality 1-100. Default: 80.'),
+      label: z.string().optional().describe('Label for the filename (e.g. "login-page"). Slugified.'),
+      inline: z.boolean().optional().describe('Return base64 image data instead of saving to file. Default: false.'),
     },
     async (args) => {
       const stub = getStub(ctx)
@@ -199,10 +203,35 @@ export function registerFullTools(mcp: McpServer, ctx: McpContext) {
         const data = (result as any).data
         const mimeType = data.startsWith('data:image/png') ? 'image/png' : 'image/jpeg'
         const base64 = data.replace(/^data:image\/\w+;base64,/, '')
+        const { width, height } = result as any
+
+        // Inline mode: return base64 image data directly (original behavior)
+        if (args.inline) {
+          return {
+            content: [
+              { type: 'image' as const, data: base64, mimeType },
+              { type: 'text' as const, text: JSON.stringify({ width, height }, null, 2) },
+            ],
+          }
+        }
+
+        // File mode (default): save to .web-dev-mcp/screenshots/
+        const resolved = resolveProject(ctx)
+        const logDir = resolved.server?.logDir ?? ctx.session.logDir
+        const screenshotDir = join(logDir, 'screenshots')
+        mkdirSync(screenshotDir, { recursive: true })
+
+        const ext = mimeType === 'image/png' ? 'png' : 'jpeg'
+        const timestamp = Date.now()
+        const slug = args.label ? '-' + args.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') : ''
+        const filename = `screenshot-${timestamp}${slug}.${ext}`
+        const filePath = join(screenshotDir, filename)
+
+        writeFileSync(filePath, Buffer.from(base64, 'base64'))
+
         return {
           content: [
-            { type: 'image' as const, data: base64, mimeType },
-            { type: 'text' as const, text: JSON.stringify({ width: (result as any).width, height: (result as any).height }, null, 2) },
+            { type: 'text' as const, text: JSON.stringify({ path: filePath, width, height }, null, 2) },
           ],
         }
       } catch (err: any) { return errResult(err) }
