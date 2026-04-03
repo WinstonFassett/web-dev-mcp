@@ -1,6 +1,8 @@
 # @winstonfassett/web-dev-mcp-gateway
 
-Universal MCP gateway for web development. Proxy any dev server to give AI agents live browser observability — console logs, errors, network requests, DOM queries, and JS evaluation.
+Universal MCP gateway for web development. Give AI agents live browser observability during development — console logs, errors, network requests, DOM queries, screenshots, and JS evaluation.
+
+A dev sidecar, not a browser automation tool. The agent sees your browser tab, with your auth and state.
 
 Works with **any** HTTP dev server: Next.js, Vite, Remix, Rails, Django, static files.
 
@@ -35,14 +37,14 @@ Adapters auto-start the gateway — no separate terminal needed.
 Browser ──→ Gateway (:3333) ──→ Dev Server (:3000)
    │             │
    ├─ /__events  │  Console/error/network events (WebSocket)
-   ├─ /__rpc     │  DOM queries via capnweb RPC (WebSocket)
+   ├─ /__rpc     │  JSON commands — eval, screenshot, click, etc. (WebSocket)
    └─ /__mcp/sse │  MCP tools for AI agents (SSE)
 ```
 
 1. Gateway proxies all HTTP/WebSocket traffic to your dev server
 2. Injected `<script>` patches `console.*`, error handlers, `fetch`/`XHR`
 3. Events stream to gateway → written to NDJSON log files
-4. capnweb RPC enables bidirectional browser communication
+4. JSON command channel enables browser interaction (eval, screenshot, click, etc.)
 5. MCP server exposes tools that AI agents call
 
 ## MCP Tools (core set)
@@ -54,7 +56,7 @@ Browser ──→ Gateway (:3333) ──→ Dev Server (:3000)
 | `list_browsers` | List connected browser tabs |
 | `get_diagnostics` | Consolidated logs + errors + build status snapshot |
 | `clear` | Truncate logs, set checkpoint for incremental reads |
-| `eval_js_rpc` | Run JS with `document`/`window` as remote DOM proxies. Persistent `state` + `browser.*` helpers |
+| `eval_js` | Run JS in browser with full DOM access. Auto-awaits promises. Accepts `string \| string[]` for auto-waited pipelines. Persistent `state` + `browser.*` helpers |
 
 Full toolset (23 tools): `/__mcp/sse?tools=full`
 
@@ -64,10 +66,11 @@ Full toolset (23 tools): `/__mcp/sse?tools=full`
 npx web-dev-mcp [options]
 
 Options:
-  --target, -t <url>   Dev server URL to proxy
-  --port, -p <port>    Gateway port (default: 3333)
-  --network            Capture fetch/XHR requests
-  --help, -h           Show help
+  --target, -t <url>     Dev server URL to proxy
+  --port, -p <port>      Gateway port (default: 3333)
+  --network              Capture fetch/XHR requests
+  --auto-register        Write MCP config to .mcp.json, .cursor/, .windsurf/, .vscode/
+  --help, -h             Show help
 ```
 
 ## License

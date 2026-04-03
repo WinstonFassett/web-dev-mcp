@@ -108,7 +108,7 @@ export default function RootLayout({ children }) {
 No adapter needed. Either:
 
 - **Proxy mode**: browse `http://localhost:3333/http://localhost:YOUR_PORT/` — the gateway proxies and injects automatically.
-- **Script tag**: add `<script src="http://localhost:3333/__client.js"></script>` to your HTML.
+- **Script tag**: add `<script src="http://localhost:3333/__web-dev-mcp.js"></script>` to your HTML.
 
 > All adapters auto-start the gateway. If you installed globally, the adapter finds it. No separate terminal needed.
 
@@ -208,7 +208,7 @@ npx skills add WinstonFassett/web-dev-mcp --agent claude-code cursor
 
 This installs the `web-dev-mcp` skill which covers:
 - When to call `set_project` and `get_diagnostics`
-- How to use `eval_js_rpc` with `browser.*` helpers
+- How to use `eval_js` with `browser.*` helpers
 - Test-fix loop patterns, screenshot workflows, DOM navigation
 
 > Skills are primarily useful for agents that support SKILL.md files (Claude Code, etc.). Other agents still benefit from the MCP tools alone (step 3).
