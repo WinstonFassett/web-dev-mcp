@@ -8,7 +8,7 @@ import { OverlayCanvas } from './overlay-canvas.js'
 import type { OverlayBounds } from './overlay-canvas.js'
 import { getElementContext, formatContextCard, getComponentDisplayName } from './context.js'
 import {
-  ELEMENT_DETECTION_THROTTLE_MS, ACTIVATION_KEY,
+  ELEMENT_DETECTION_THROTTLE_MS, ACTIVATION_KEY, REQUIRE_SHIFT,
   FROZEN_GLOW_COLOR, FROZEN_GLOW_EDGE_PX, Z_INDEX_OVERLAY_CANVAS,
   FADE_DURATION_MS, FEEDBACK_DURATION_MS,
 } from './constants.js'
@@ -127,7 +127,7 @@ const init = () => {
     })
   }, true)
 
-  console.log('[element-grab] Ready — hold Cmd+C to activate')
+  console.log('[element-grab] Ready — hold Cmd+Shift+C to activate')
 }
 
 // --- Overlay bounds ---
@@ -286,7 +286,7 @@ let cmdHeld = false
 
 const onKeyDown = (e: KeyboardEvent) => {
   if (e.key === 'Meta' || e.key === 'Control') { cmdHeld = true; return }
-  if (cmdHeld && e.key.toLowerCase() === ACTIVATION_KEY) {
+  if (cmdHeld && e.key.toLowerCase() === ACTIVATION_KEY && (!REQUIRE_SHIFT || e.shiftKey)) {
     e.preventDefault()
     if (!active) activate()
   }
