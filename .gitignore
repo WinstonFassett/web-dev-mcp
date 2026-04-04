@@ -18,3 +18,4 @@ dist/
 examples/*/.claude/
 examples/*/.cursor/
 examples/*/.windsurf/
+.web-dev-mcp
