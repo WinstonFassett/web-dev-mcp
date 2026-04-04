@@ -5,8 +5,8 @@ import type { GatewayOptions } from './types.js'
 
 const args = process.argv.slice(2)
 
-function parseArgs(args: string[]): Partial<GatewayOptions> & { help?: boolean } {
-  const result: Partial<GatewayOptions> & { help?: boolean } = {}
+function parseArgs(args: string[]): Partial<GatewayOptions> & { help?: boolean; autoRegister?: boolean } {
+  const result: Partial<GatewayOptions> & { help?: boolean; autoRegister?: boolean } = {}
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
@@ -55,14 +55,25 @@ if (opts.help) {
   process.exit(0)
 }
 
-startGateway({
-  port: opts.port,
-  network: opts.network,
-  https: opts.https,
-  cert: opts.cert,
-  key: opts.key,
-  autoRegister: opts.autoRegister,
-}).catch((err) => {
-  console.error('Failed to start gateway:', err)
-  process.exit(1)
-})
+if (opts.autoRegister) {
+  // Register MCP config and exit — don't start the server
+  const { autoRegister } = await import('./auto-register.js')
+  const port = opts.port ?? 3333
+  const mcpUrl = `http://localhost:${port}/__mcp/sse`
+  const registered = autoRegister(process.cwd(), mcpUrl)
+  for (const path of registered) {
+    console.log(`  Auto-registered: ${path}`)
+  }
+  process.exit(0)
+} else {
+  startGateway({
+    port: opts.port,
+    network: opts.network,
+    https: opts.https,
+    cert: opts.cert,
+    key: opts.key,
+  }).catch((err) => {
+    console.error('Failed to start gateway:', err)
+    process.exit(1)
+  })
+}

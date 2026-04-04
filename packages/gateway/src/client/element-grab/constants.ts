@@ -1,7 +1,8 @@
 import { overlayColor } from './utils/overlay-color.js'
 
 // Activation
-export const ACTIVATION_KEY = 'c'  // Cmd+C hold
+export const ACTIVATION_KEY = 'c'  // Cmd+Shift+C
+export const REQUIRE_SHIFT = true
 export const DEFAULT_KEY_HOLD_DURATION_MS = 100
 
 // Element detection

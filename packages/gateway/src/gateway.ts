@@ -16,7 +16,6 @@ import { ServerConsoleWriter } from './writers/server-console.js'
 import { createMcpMiddleware, sendNotificationToAll, type McpContext } from './mcp-server.js'
 import { setupRpcWebSocket, onBrowserEvent, emitLogEvent, removeBrowsersByServer } from './rpc-server.js'
 import { handleAdmin } from './admin.js'
-import { autoRegister } from './auto-register.js'
 import { ServerRegistry, type RegisteredServer, makeServerId, makeProjectId, initProjectLogDir } from './registry.js'
 import { handleElementGrabRequest } from './element-grab.js'
 
@@ -346,6 +345,47 @@ export async function startGateway(options: GatewayOptions) {
       return
     }
 
+    // Landing page
+    if (url === '/') {
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      res.end(`<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>web-dev-mcp</title>
+<style>
+  *{box-sizing:border-box;margin:0}
+  body{font-family:system-ui,-apple-system,sans-serif;background:#0a0a0a;color:#e0e0e0;display:flex;align-items:center;justify-content:center;min-height:100vh}
+  .wrap{text-align:center;max-width:520px;width:100%;padding:2rem}
+  h1{font-size:1.4rem;font-weight:500;margin-bottom:.5rem;color:#fff}
+  .section{margin-top:2rem}
+  .section h2{font-size:.95rem;font-weight:500;color:#888;margin-bottom:.75rem}
+  form{display:flex;gap:.5rem}
+  input{flex:1;padding:.6rem .8rem;border-radius:6px;border:1px solid #333;background:#141414;color:#e0e0e0;font-size:.9rem;outline:none}
+  input:focus{border-color:#555}
+  input::placeholder{color:#444}
+  button{padding:.6rem 1.2rem;border-radius:6px;border:none;background:#fff;color:#000;font-size:.9rem;font-weight:500;cursor:pointer}
+  button:hover{background:#ddd}
+  a.link{display:inline-block;padding:.6rem 1.2rem;border-radius:6px;border:1px solid #333;color:#e0e0e0;text-decoration:none;font-size:.9rem}
+  a.link:hover{border-color:#555;background:#141414}
+</style>
+</head><body>
+<div class="wrap">
+  <h1>web-dev-mcp</h1>
+  <div class="section">
+    <a class="link" href="/__admin">Admin Dashboard &rarr;</a>
+  </div>${proxyMiddleware ? `
+  <div class="section">
+    <h2>Proxy</h2>
+    <form onsubmit="event.preventDefault();var u=this.url.value.trim();if(u){if(!/^https?:\\/\\//.test(u))u='http://'+u;location.href='/'+u}">
+      <input name="url" type="text" placeholder="http://localhost:3000" autofocus>
+      <button type="submit">Go</button>
+    </form>
+  </div>` : ''}
+</div>
+</body></html>`)
+      return
+    }
+
     // Try optional proxy plugin (npm install web-dev-mcp-proxy)
     if (proxyMiddleware) {
       proxyMiddleware(req, res, () => {
@@ -483,13 +523,6 @@ export async function startGateway(options: GatewayOptions) {
     })
   })
 
-  // Auto-register
-  if (options.autoRegister) {
-    const registered = autoRegister(process.cwd(), session.info.mcpUrl)
-    for (const path of registered) {
-      console.log(`  Auto-registered: ${path}`)
-    }
-  }
 
   server.listen(port, () => {
     const proto = useHttps ? 'https' : 'http'

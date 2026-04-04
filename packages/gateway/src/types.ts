@@ -4,7 +4,6 @@ export interface GatewayOptions {
   https?: boolean
   cert?: string
   key?: string
-  autoRegister?: boolean
   logDir?: string
   maxFileSizeMb?: number
 }
