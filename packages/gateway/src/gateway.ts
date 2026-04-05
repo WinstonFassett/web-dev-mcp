@@ -325,7 +325,7 @@ export async function startGateway(options: GatewayOptions) {
     }
 
     // Admin UI
-    if (handleAdmin(req, res, url, { startedAt: session.startedAt, registry, port })) return
+    if (handleAdmin(req, res, url, { startedAt: session.startedAt, registry, port, session })) return
 
     // Admin SSE event stream
     if (url.startsWith('/__admin/events')) {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { getGateway } from '../data/gateway'
+  import { evalInBrowser } from '../data/gateway'
   import { getRegistry, type BrowserInfo } from '../data/registry.svelte'
   import type { Route } from '../data/router'
   import { EditorView, basicSetup } from 'codemirror'
@@ -78,10 +78,8 @@
 
     running = true
     try {
-      const gw = await getGateway()
-      const project = gw.stub.getProject(target.serverId)
-      const result = await project.eval(code)
-      const formatted = tryParseJson(result) ?? result
+      const result = await evalInBrowser(code, target.serverId)
+      const formatted = tryParseJson(result) ?? String(result)
 
       history.push({
         code,
