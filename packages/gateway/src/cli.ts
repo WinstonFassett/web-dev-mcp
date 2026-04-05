@@ -5,8 +5,8 @@ import type { GatewayOptions } from './types.js'
 
 const args = process.argv.slice(2)
 
-function parseArgs(args: string[]): Partial<GatewayOptions> & { help?: boolean; autoRegister?: boolean } {
-  const result: Partial<GatewayOptions> & { help?: boolean; autoRegister?: boolean } = {}
+function parseArgs(args: string[]): Partial<GatewayOptions> & { help?: boolean; autoRegister?: boolean; global?: boolean } {
+  const result: Partial<GatewayOptions> & { help?: boolean; autoRegister?: boolean; global?: boolean } = {}
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
@@ -22,6 +22,8 @@ function parseArgs(args: string[]): Partial<GatewayOptions> & { help?: boolean; 
       result.key = args[++i]
     } else if (arg === '--auto-register') {
       result.autoRegister = true
+    } else if (arg === '--global') {
+      result.global = true
     } else if (arg === '--help' || arg === '-h') {
       result.help = true
     }
@@ -50,6 +52,7 @@ if (opts.help) {
     --cert <path>        Custom TLS certificate (use with --key)
     --key <path>         Custom TLS private key (use with --cert)
     --auto-register      Register MCP URL in .mcp.json, .cursor/, .windsurf/
+    --global             With --auto-register: write to user-level configs (~/.claude/, ~/.cursor/)
     --help, -h           Show this help
 `)
   process.exit(0)
@@ -57,12 +60,20 @@ if (opts.help) {
 
 if (opts.autoRegister) {
   // Register MCP config and exit — don't start the server
-  const { autoRegister } = await import('./auto-register.js')
+  const { autoRegister, autoRegisterGlobal } = await import('./auto-register.js')
   const port = opts.port ?? 3333
   const mcpUrl = `http://localhost:${port}/__mcp/sse`
-  const registered = autoRegister(process.cwd(), mcpUrl)
-  for (const path of registered) {
-    console.log(`  Auto-registered: ${path}`)
+
+  if (opts.global) {
+    const registered = autoRegisterGlobal(mcpUrl)
+    for (const path of registered) {
+      console.log(`  Auto-registered (global): ${path}`)
+    }
+  } else {
+    const registered = autoRegister(process.cwd(), mcpUrl)
+    for (const path of registered) {
+      console.log(`  Auto-registered: ${path}`)
+    }
   }
   process.exit(0)
 } else {
