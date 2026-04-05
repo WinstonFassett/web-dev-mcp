@@ -87,11 +87,33 @@ export async function startGateway(options: GatewayOptions) {
   // Admin SSE clients for real-time event streaming
   const adminClients = new Set<{ res: http.ServerResponse; browserId?: string }>()
 
+  // Ring buffer for SSE replay on reconnect
+  const SSE_BUFFER_SIZE = 1000
+  const sseBuffer: Array<{ id: number; event: string; data: any }> = []
+  let sseSeq = 0
+
   function broadcastToAdmin(event: string, data: any) {
+    const id = ++sseSeq
     const json = JSON.stringify(data)
+
+    // Store in ring buffer
+    sseBuffer.push({ id, event, data })
+    if (sseBuffer.length > SSE_BUFFER_SIZE) {
+      sseBuffer.shift()
+    }
+
     for (const client of adminClients) {
       if (client.browserId && data.browserId && client.browserId !== data.browserId) continue
-      client.res.write(`event: ${event}\ndata: ${json}\n\n`)
+      client.res.write(`id: ${id}\nevent: ${event}\ndata: ${json}\n\n`)
+    }
+  }
+
+  /** Replay missed events from ring buffer */
+  function replayFrom(lastId: number, res: http.ServerResponse, browserId?: string) {
+    for (const entry of sseBuffer) {
+      if (entry.id <= lastId) continue
+      if (browserId && entry.data.browserId && entry.data.browserId !== browserId) continue
+      res.write(`id: ${entry.id}\nevent: ${entry.event}\ndata: ${JSON.stringify(entry.data)}\n\n`)
     }
   }
 
@@ -331,6 +353,7 @@ export async function startGateway(options: GatewayOptions) {
     if (url.startsWith('/__admin/events')) {
       const params = new URL(url, 'http://localhost').searchParams
       const browserId = params.get('browser_id') || undefined
+      const lastEventId = parseInt(req.headers['last-event-id'] as string, 10)
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -338,6 +361,12 @@ export async function startGateway(options: GatewayOptions) {
         'Access-Control-Allow-Origin': '*',
       })
       res.write('event: connected\ndata: {}\n\n')
+
+      // Replay missed events if reconnecting
+      if (lastEventId > 0) {
+        replayFrom(lastEventId, res, browserId)
+      }
+
       const client = { res, browserId }
       adminClients.add(client)
       const keepalive = setInterval(() => res.write(':keepalive\n\n'), 30000)
