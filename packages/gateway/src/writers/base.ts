@@ -1,16 +1,19 @@
-import { appendFileSync, statSync, renameSync, writeFileSync } from 'node:fs'
+import { appendFileSync, statSync, renameSync, writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import type { HarnessEvent } from '../types.js'
 
 export class NdjsonWriter {
   private nextId = 1
   private maxFileSize: number
+  private maxFiles: number
 
   constructor(
     private filePath: string,
     private channel: string,
     maxFileSizeMb?: number,
+    maxFiles?: number,
   ) {
     this.maxFileSize = (maxFileSizeMb ?? 10) * 1024 * 1024
+    this.maxFiles = maxFiles ?? 3
   }
 
   write(payload: unknown): HarnessEvent {
@@ -26,8 +29,7 @@ export class NdjsonWriter {
     try {
       const stats = statSync(this.filePath)
       if (stats.size >= this.maxFileSize) {
-        renameSync(this.filePath, this.filePath + '.1')
-        writeFileSync(this.filePath, '')
+        this.rotate()
       }
     } catch {
       // File might not exist yet
@@ -35,6 +37,28 @@ export class NdjsonWriter {
 
     appendFileSync(this.filePath, line)
     return event
+  }
+
+  /** Rotate current file and clean up old rotated files */
+  private rotate(): void {
+    // Delete the oldest file if at limit
+    const oldest = `${this.filePath}.${this.maxFiles}`
+    if (existsSync(oldest)) {
+      unlinkSync(oldest)
+    }
+
+    // Shift existing rotated files up: .2 → .3, .1 → .2
+    for (let i = this.maxFiles - 1; i >= 1; i--) {
+      const from = `${this.filePath}.${i}`
+      const to = `${this.filePath}.${i + 1}`
+      if (existsSync(from)) {
+        renameSync(from, to)
+      }
+    }
+
+    // Current → .1
+    renameSync(this.filePath, `${this.filePath}.1`)
+    writeFileSync(this.filePath, '')
   }
 
   resetId(): void {
