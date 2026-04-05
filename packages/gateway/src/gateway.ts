@@ -85,35 +85,65 @@ export async function startGateway(options: GatewayOptions) {
   }
 
   // Admin SSE clients for real-time event streaming
-  const adminClients = new Set<{ res: http.ServerResponse; browserId?: string }>()
+  const adminClients = new Set<{ res: http.ServerResponse; browserId?: string; lastSentId: number }>()
 
-  // Ring buffer for SSE replay on reconnect
-  const SSE_BUFFER_SIZE = 1000
-  const sseBuffer: Array<{ id: number; event: string; data: any }> = []
+  // SSE replay buffer. Events are on disk (NDJSON) before they reach here.
+  // Buffer exists only for seamless Last-Event-ID replay on reconnect.
+  // Two eviction strategies, both run after every broadcast:
+  //   1. Drop everything all connected clients have received
+  //   2. Hard cap at 1MB to bound memory regardless of client state
+  const SSE_BUFFER_MAX_BYTES = 1024 * 1024
+  const sseBuffer: Array<{ id: number; event: string; json: string; size: number }> = []
   let sseSeq = 0
+  let sseBufferBytes = 0
+
+  function evictBuffer() {
+    // Evict consumed: if no clients, clear all; otherwise drop below min client cursor
+    if (adminClients.size === 0) {
+      sseBuffer.length = 0
+      sseBufferBytes = 0
+      return
+    }
+    let minId = Infinity
+    for (const client of adminClients) {
+      if (client.lastSentId < minId) minId = client.lastSentId
+    }
+    while (sseBuffer.length > 0 && sseBuffer[0].id <= minId) {
+      sseBufferBytes -= sseBuffer.shift()!.size
+    }
+    // Hard cap: evict oldest if over budget (slow/stale client)
+    while (sseBufferBytes > SSE_BUFFER_MAX_BYTES && sseBuffer.length > 0) {
+      sseBufferBytes -= sseBuffer.shift()!.size
+    }
+  }
 
   function broadcastToAdmin(event: string, data: any) {
     const id = ++sseSeq
     const json = JSON.stringify(data)
+    const size = json.length + event.length + 20
 
-    // Store in ring buffer
-    sseBuffer.push({ id, event, data })
-    if (sseBuffer.length > SSE_BUFFER_SIZE) {
-      sseBuffer.shift()
-    }
+    sseBuffer.push({ id, event, json, size })
+    sseBufferBytes += size
 
     for (const client of adminClients) {
       if (client.browserId && data.browserId && client.browserId !== data.browserId) continue
       client.res.write(`id: ${id}\nevent: ${event}\ndata: ${json}\n\n`)
+      client.lastSentId = id
     }
+
+    evictBuffer()
   }
 
-  /** Replay missed events from ring buffer */
   function replayFrom(lastId: number, res: http.ServerResponse, browserId?: string) {
     for (const entry of sseBuffer) {
       if (entry.id <= lastId) continue
-      if (browserId && entry.data.browserId && entry.data.browserId !== browserId) continue
-      res.write(`id: ${entry.id}\nevent: ${entry.event}\ndata: ${JSON.stringify(entry.data)}\n\n`)
+      if (browserId) {
+        try {
+          const data = JSON.parse(entry.json)
+          if (data.browserId && data.browserId !== browserId) continue
+        } catch { continue }
+      }
+      res.write(`id: ${entry.id}\nevent: ${entry.event}\ndata: ${entry.json}\n\n`)
     }
   }
 
@@ -360,14 +390,13 @@ export async function startGateway(options: GatewayOptions) {
         'Connection': 'keep-alive',
         'Access-Control-Allow-Origin': '*',
       })
-      res.write('event: connected\ndata: {}\n\n')
-
-      // Replay missed events if reconnecting
+      res.write(`id: ${sseSeq}\nevent: connected\ndata: {}\n\n`)
+      const client = { res, browserId, lastSentId: sseSeq }
+      // Replay missed events from buffer if reconnecting
       if (lastEventId > 0) {
         replayFrom(lastEventId, res, browserId)
+        client.lastSentId = sseSeq
       }
-
-      const client = { res, browserId }
       adminClients.add(client)
       const keepalive = setInterval(() => res.write(':keepalive\n\n'), 30000)
       req.on('close', () => { adminClients.delete(client); clearInterval(keepalive) })
